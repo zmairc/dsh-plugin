@@ -1,0 +1,51 @@
+{
+  "name": "persona-forge",
+  "version": "0.1.0",
+  "description": "把聊天记录蒸馏成可扮演的人设：给 DSH 加两个工具，forge_persona 生成人设、chat_persona 按人设对话。",
+  "private": false,
+  "license": "MIT",
+  "type": "module",
+  "main": "src/dsh/plugin.ts",
+  "exports": {
+    ".": "./src/dsh/plugin.ts"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "bin": {
+    "personaforge": "src/cli/index.ts",
+    "personaforge-mcp": "src/mcp/server.ts"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "persona",
+    "chat-history",
+    "style-transfer"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "src/**/*.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "examples/public"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "^0.1.5-rc.2"
+  },
+  "scripts": {
+    "test": "node --test \"tests/*.test.ts\"",
+    "smoke": "node scripts/smoke.ts",
+    "stats": "node src/cli/index.ts stats",
+    "chat": "node src/cli/index.ts chat",
+    "forge": "node src/cli/index.ts forge",
+    "mcp": "node src/mcp/server.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -1,0 +1,19 @@
+node_modules/
+data/
+*.log
+.env
+.DS_Store
+.npm-cache/
+
+# ── 真实聊天记录：任何情况下都不入库 ──
+personas/*/transcript.txt
+personas/example/*.txt
+
+# ── 从真实记录生成的文件，含原话引用，开源前必须人工脱敏 ──
+# 想公开某个示例人设时，手动 -f 添加，或先跑 ingest --redact
+personas/*/persona.md
+personas/*/lore.md
+personas/*/style.md
+personas/*/persona.draft.md
+personas/*/*.prev.md
+personas/*/persona.draft.hand.md
