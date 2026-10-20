@@ -11,7 +11,7 @@
 ## 安装
 
 ```bash
-dsh plugin --profile web add persona-forge
+dsh plugin --profile web add @zmairc/persona-forge
 ```
 
 装完 DSH 里多出两个工具：
@@ -81,7 +81,7 @@ node src/cli/index.ts forge --file 聊天记录.txt --persona 老王 --me 我
 ## 作为 DSH 插件
 
 ```bash
-dsh plugin --profile web add persona-forge
+dsh plugin --profile web add @zmairc/persona-forge
 ```
 
 装完 DSH 里多出两个工具：
@@ -227,7 +227,7 @@ data/
 - [x] 留出集盲测
 - [x] LLM 蒸馏流水线（分块观察 + 合并 + 生成 `persona.draft.md`）
 - [x] MCP server（`forge_persona` / `chat_persona`）
-- [x] DSH 原生插件（`dsh plugin add persona-forge`）
+- [x] DSH 原生插件（`dsh plugin add @zmairc/persona-forge`）
 - [ ] 微信 chatlog / QQ qq-chat-exporter / 抖音 importer
 - [ ] 记忆检索（SQLite FTS5）
 - [ ] OpenAI 兼容 API 层
