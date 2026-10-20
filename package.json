@@ -4,6 +4,9 @@
   "description": "把聊天记录蒸馏成可扮演的人设：给 DSH 加两个工具，forge_persona 生成人设、chat_persona 按人设对话。",
   "private": false,
   "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zmairc/persona-forge.git"
