@@ -9,14 +9,16 @@
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ROOT } from './archive.ts'
+import { rootDir } from './archive.ts'
 
 /**
  * Read `KEY=VALUE` pairs from a `.env` file into `process.env`.
  * Existing variables win, so a shell-provided key is never overwritten.
- * @param path - file to read; defaults to `<repo>/.env`.
+ * The default path is resolved per call, so retargeting the archive root
+ * redirects `.env` lookups too.
+ * @param path - file to read; defaults to `<root>/.env`.
  */
-export function loadDotEnv(path: string = join(ROOT, '.env')): void {
+export function loadDotEnv(path: string = join(rootDir(), '.env')): void {
   if (!existsSync(path)) return
   for (const line of readFileSync(path, 'utf8').split('\n')) {
     const trimmed = line.trim()

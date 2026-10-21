@@ -27,7 +27,7 @@ node src/cli/index.ts <命令>
 | QQ 机器人 | ❌ 未做 | — |
 | 记忆检索（FTS5） | ❌ 未做 | — |
 
-测试：`node --test --test-isolation=none "tests/*.test.ts"`（94 项全绿）
+测试：`node --test --test-isolation=none "tests/*.test.ts"`（95 项全绿）
 
 ## 第一次 distill 实测结论（dennis，11/11 块成功）
 
@@ -269,11 +269,15 @@ MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插�
 **这个验证有个陷阱（踩过一次）**：脚本放在仓库里时，Node 会走**包自引用**，`import('@zmairc/persona-forge')` 直接命中仓库自己的 `dist/`，根本没碰 `node_modules`——看起来通过，其实什么都没验证。修法：在 `.tmp-runtime/` 里放一个 `{"name":"pf-verify","type":"module"}` 的 `package.json`，把这个目录变成独立的包作用域，bare import 才会真的落到 `node_modules`。脚本里必须断言 `import.meta.resolve(...)` 的路径包含 `/node_modules/@zmairc/persona-forge/`。
 （沙箱不允许在系统临时目录建 `node_modules`，所以别把验证目录放到仓库外。）
 
-### 人设写在启动目录，不写进 `node_modules`
+### 人设写在会话工作目录，既不写 `node_modules` 也不依赖进程 cwd
 
-`archive.ts` 的 `ROOT` 不能简单取"模块往上两级"：源码里命中仓库根没问题，但装成包之后那两级落在 `node_modules/@zmairc/persona-forge/`，`personas/`、`data/`、`.env` 全会写进包里，下次 `pnpm` 更新直接清掉。
+`archive.ts` 的根目录不能简单取"模块往上两级"：源码里命中仓库根没问题，但装成包之后那两级落在 `node_modules/@zmairc/persona-forge/`，`personas/`、`data/`、`.env` 全会写进包里，下次 `pnpm` 更新直接清掉。
 
-现在 `resolveRoot(env, moduleDir, cwd)`：`PERSONAFORGE_ROOT` 优先；路径里出现 `node_modules` 就用 `process.cwd()`；否则用模块目录（仓库根）。四个单测在 `tests/root.test.ts`。所以插件的行为是——**人设和 `.env` 落在用户启动 `dsh` 时所在的目录**，README 已写明。
+第一版修法（0.1.3/0.1.4）是 `resolveRoot(env, moduleDir, cwd)`：`PERSONAFORGE_ROOT` 优先；路径里出现 `node_modules` 就用 `process.cwd()`。**这个假设是错的**——DSH 的会话工作目录和 `dsh` 进程的 cwd 是两回事。用户从项目目录起 `dsh web` 才会碰对；若 DSH 是从别处启动的（快捷方式、其它终端、GUI），插件就去错误目录找 `.env`，`chat_persona` 报「缺少 API key」，看起来像没配置 key，实际是路径错了。这个坑真踩过。
+
+0.1.5 的正确做法：`archive.ts` 导出 `rootDir()` / `setRoot(dir)`；插件在每次 `execute(args, exec)` 里先 `retargetToSession(exec)`，从 `exec.agent.session.header.cwd` 取**会话工作目录**再 `setRoot`。这也是 DSH 自己文件工具用的锚点（`dsh-tool-fs`：`const cwd = exec.agent?.session.header.cwd`）。`loadDotEnv()` 的默认路径改成每次调用时 `join(rootDir(), '.env')`，所以重定向根目录会同时重定向 `.env` 查找。
+
+优先级：`PERSONAFORGE_ROOT` > 会话工作目录（插件）/ 模块目录（CLI、MCP、测试）。单测在 `tests/root.test.ts`（含 `setRoot` 往返）。**插件侧不要再在 `apply()` 里读 `.env`**——那时还不知道会话目录。
 
 ### 0.1.2 发废了：不要在本机测试包里 `npm install` 打包文件
 
@@ -314,12 +318,13 @@ MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插�
 - ✅ **README** 补了「先看一个例子」「一条命令生成人设」「作为 MCP 插件」三节。
 - ✅ 首次提交完成（`2d24437`），LICENSE 已加（MIT）。
 - ✅ **GitHub 仓库**：https://github.com/zmairc/dsh-plugin（原 persona-forge，用户改名后同步；最新 commit `730548e`）
-- ✅ **npm 包**：`@zmairc/persona-forge` 已发布，最新 `0.1.2`（2026-10-21）
+- ✅ **npm 包**：`@zmairc/persona-forge` 已上线 `0.1.3`、`0.1.4`（2026-10-21）
   - 原想用 `persona-forge`，npm 以「与已有包 `personaforge` 太相似」拒绝，改用 scoped 包
   - npm 账号 `zmairc` 已开 2FA（npm 强制：发布必须 2FA）
-  - 版本线：`0.1.0` 入口指向 `src/*.ts` → 装进 profile 必崩；`0.1.1` 同样，且带自依赖；`0.1.2` 改成 `dist/` 但**自依赖没去掉** → pnpm 直接装不上；**`0.1.3` 是第一个能真正装上并加载的版本**，对外只推 `>= 0.1.3`
-- ⬜ **发布 0.1.3**（修掉自依赖；必须先 `git push`，再在用户自己的 PowerShell 里 `npm publish`，需 2FA）
-- ⬜ **本地验证**：`dsh plugin --profile web add @zmairc/persona-forge@0.1.3`，启动 `dsh web` 后确认 `forge_persona` / `chat_persona` 出现
+  - 版本线：`0.1.0`/`0.1.1` 入口指向 `src/*.ts` → 装进 profile 必崩；`0.1.2` 改成 `dist/` 但带自依赖 → pnpm 装不上；`0.1.3` 是第一个能装能加载的版本（自依赖已除）；`0.1.4` 与 0.1.3 内容相同，只为绕开 npm staged publish 占号
+  - **npm staged publishing 会占版本号**：重复发布同一版本报 `409 Cannot publish over previously staged version`，而本机 npm 11.12.1 没有 `npm stage` 子命令可以清理 → 直接换版本号最快
+- ✅ **插件在用户的 DSH 里跑通了**：`dsh plugin --profile web add @zmairc/persona-forge@0.1.3` → 重启 `dsh web` → `chat_persona(zhaoming)` 回「没，刚躺下。咋了」
+- ⬜ **发布 0.1.5**（会话工作目录修正，见「人设写在会话工作目录」一节）：`git push` 后在用户自己的 PowerShell 里 `npm publish`，再 `dsh plugin --profile web update @zmairc/persona-forge`
 
 ## 用户的长期愿景（2026-10-20 原话整理）
 

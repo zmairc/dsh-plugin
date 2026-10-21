@@ -30,16 +30,36 @@ export function resolveRoot(env: Record<string, string | undefined>, moduleDir: 
 }
 
 /** Directory that `data/` and `personas/` live under. */
-export const ROOT = resolveRoot(process.env, fileURLToPath(new URL('../../', import.meta.url)), process.cwd())
+let currentRoot = resolveRoot(process.env, fileURLToPath(new URL('../../', import.meta.url)), process.cwd())
+
+/**
+ * The directory `data/` and `personas/` currently resolve under.
+ * @returns an absolute directory path.
+ */
+export function rootDir(): string {
+  return currentRoot
+}
+
+/**
+ * Point the archive at another root.
+ *
+ * A harness is not started from the user's project: the DSH session carries its
+ * own working directory, which may differ from `process.cwd()`. The plugin
+ * retargets per call; the CLI and the MCP server keep the module default.
+ * @param dir - the new root.
+ */
+export function setRoot(dir: string): void {
+  currentRoot = resolve(dir)
+}
 
 /** Absolute path under `data/`, creating no directory. */
 export function dataPath(...parts: string[]): string {
-  return join(ROOT, 'data', ...parts)
+  return join(currentRoot, 'data', ...parts)
 }
 
 /** Absolute path under `personas/<name>/`. */
 export function personaPath(name: string, ...parts: string[]): string {
-  return join(ROOT, 'personas', name, ...parts)
+  return join(currentRoot, 'personas', name, ...parts)
 }
 
 /** Read a JSONL file, returning an empty array when it does not exist. */

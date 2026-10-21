@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { join, resolve } from 'node:path'
-import { resolveRoot } from '../src/core/archive.ts'
+import { resolveRoot, rootDir, setRoot } from '../src/core/archive.ts'
 
 /**
  * Root selection decides where `data/` and `personas/` are written. The case
@@ -30,4 +30,20 @@ test('PERSONAFORGE_ROOT overrides both', () => {
 
 test('a blank PERSONAFORGE_ROOT is ignored', () => {
   assert.equal(resolveRoot({ PERSONAFORGE_ROOT: '   ' }, checkout, cwd), resolve(checkout))
+})
+
+test('setRoot retargets the archive, and the previous root can be restored', () => {
+  // The DSH plugin retargets to the session workspace on every call; this is
+  // the mechanism that keeps personas out of the harness process directory.
+  const before = rootDir()
+  const target = join(resolve('C:/work'), 'session-project')
+
+  try {
+    setRoot(target)
+    assert.equal(rootDir(), target)
+  } finally {
+    setRoot(before)
+  }
+
+  assert.equal(rootDir(), before)
 })

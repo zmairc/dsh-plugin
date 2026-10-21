@@ -24,6 +24,23 @@ export const inject = ['tools']
 
 const SOURCES: readonly Source[] = ['wechat', 'qq', 'douyin', 'manual']
 
+/**
+ * Point persona storage at the session's own workspace.
+ *
+ * The harness process is not started from the user's project — its `cwd` is
+ * wherever the launcher ran — so `process.cwd()` is the wrong guess for where
+ * `personas/` and `.env` live. The session header carries the directory the
+ * user actually opened, the same anchor the harness's own file tools use.
+ * Retargeting per call keeps one plugin instance correct across sessions with
+ * different workspaces.
+ * @param exec - the tool execution context handed to `execute`.
+ */
+function retargetToSession(exec: unknown): void {
+  const header = (exec as { agent?: { session?: { header?: { cwd?: unknown } } } } | undefined)?.agent?.session?.header
+  const cwd = header?.cwd
+  if (typeof cwd === 'string' && cwd.trim().length > 0) setRoot(cwd)
+}
+
 /** Run `forge_persona` and return the summary text. */
 async function callForge(args: Record<string, unknown>): Promise<string> {
   const file = typeof args.file === 'string' ? args.file : ''
@@ -111,8 +128,8 @@ async function callChat(args: Record<string, unknown>): Promise<string> {
  * @param ctx - registrant context carrying the tool registry.
  */
 export function apply(ctx: { tools: { register: (tool: unknown) => void } }): void {
-  // The plugin may be loaded before the user filled `.env`; every call re-reads it.
-  loadDotEnv()
+  // `.env` is read per call, after the session workspace is known: loading it
+  // here would pin the lookup to the harness process's own directory.
 
   ctx.tools.register(defineTool({
     name: 'forge_persona',
@@ -138,7 +155,11 @@ export function apply(ctx: { tools: { register: (tool: unknown) => void } }): vo
       },
       render: (_args: unknown, value: { text: string }) => [{ type: 'text' as const, text: value.text }],
     },
-    execute: async (args: Record<string, unknown>) => ({ text: await callForge(args) }),
+    execute: async (args: Record<string, unknown>, exec?: unknown) => {
+      retargetToSession(exec)
+      loadDotEnv()
+      return { text: await callForge(args) }
+    },
     presentCall: () => ({ card: 'generic' as const, title: '生成人设', kind: 'other' as const }),
   }))
 
@@ -170,7 +191,11 @@ export function apply(ctx: { tools: { register: (tool: unknown) => void } }): vo
       },
       render: (_args: unknown, value: { text: string }) => [{ type: 'text' as const, text: value.text }],
     },
-    execute: async (args: Record<string, unknown>) => ({ text: await callChat(args) }),
+    execute: async (args: Record<string, unknown>, exec?: unknown) => {
+      retargetToSession(exec)
+      loadDotEnv()
+      return { text: await callChat(args) }
+    },
     presentCall: () => ({ card: 'generic' as const, title: '按人设回复', kind: 'other' as const }),
   }))
 }

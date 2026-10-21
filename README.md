@@ -27,7 +27,7 @@ dsh plugin --profile web add @zmairc/persona-forge
 PERSONAFORGE_API_KEY=sk-...
 ```
 
-`.env` 和生成的人设都落在**你启动 `dsh` 时所在的目录**（`personas/`、`data/`）；想放到别处就设 `PERSONAFORGE_ROOT`。这样升级插件不会带走你的人设——装成包之后它不会往 `node_modules` 里写东西。
+`.env` 和生成的人设都落在**当前会话的工作目录**（在 DSH 里就是你打开的那个目录；命令行里用就是当前目录）；想放到别处就设 `PERSONAFORGE_ROOT`。升级插件不会带走你的人设——装成包之后它不往 `node_modules` 里写东西。
 
 本地开发、或者改了代码想立刻试，用 `link:` 装当前目录：
 
