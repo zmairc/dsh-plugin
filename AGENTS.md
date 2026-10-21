@@ -326,6 +326,31 @@ MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插�
 - ✅ **插件在用户的 DSH 里跑通了**：`dsh plugin --profile web add @zmairc/persona-forge@0.1.3` → 重启 `dsh web` → `chat_persona(zhaoming)` 回「没，刚躺下。咋了」
 - ⬜ **发布 0.1.5**（会话工作目录修正，见「人设写在会话工作目录」一节）：`git push` 后在用户自己的 PowerShell 里 `npm publish`，再 `dsh plugin --profile web update @zmairc/persona-forge`
 
+## zhaoming 全量蒸馏（8165 条，2026-10-21）
+
+用户要求把赵明的人设从手写版（175 条文字）升级成从微信导出全量跑出来的版本。
+
+**数据源**：`E:\zmairc\wxoutput\导出\吴文哲_20261019_2217\chat.txt`（解析 8165 条：吴文哲 4835 / 我 3330）。
+
+**坑一：默认把吴文哲当 friend。** forge 的 `--me` 是「记录主人」。蒸馏赵明要 `--me 吴文哲 --friend 赵明`。但记录里赵明叫「我」，直接这么传，渲染出来的对话全是 `我：…`，模型容易看反。做法：先把导出里的 `[时间] 我:` 换成 `[时间] 赵明:`（3330 行），生成一份临时 txt 再喂给 forge。
+
+**坑二：media 路径被当成聊天文本。** 这份导出把媒体写成独立一行：`media/00001_64c03476W.jpg`、`视频：media/…`、`附件：x.docx -> media/…`（407 条）。旧 parse 当成 text，短语统计被文件名碎片占满：`00(132) me(117) ia(116) medi(115) edia(115)`。修法两层：
+
+- 临时 txt 里把 media 行换成 `[图片]/[视频]/[语音]/[文件]` 占位（保住媒体占比和消息序列）；
+- `parse.ts` 新增 `MEDIA_LINE` + `mediaPathKind`，整行都是 media 路径的直接归成媒体 kind（3 项单测，97 项全绿）。**插件跑的是 npm 上 0.1.x 的 dist，这次修复要等下次发布才生效。**
+
+**结果**：142/142 块，零失败。统计口径和手写版不一样了（数据多 17 倍）：平均 17 字（手写 15.9）、中位 7（9）、8 字以内 56%、逗号 24%（手写 40%）、句号 7.8%、问号字符 3.5%、1–2 字 14%（手写 25%）、连发 2.1 条/组。手写版「两条完全不同的线」方向没错，但短档占比被高估了。
+
+**人工核对的四处（已改进 persona.md）**：
+- 模型的「他怎么称呼你」里混进了 `赵明`——那是他自己的名字。只留 `吴文哲`/`兄弟`/`bro`。
+- `avoid` 的「不追问对方细节」和手写版「爱追问」冲突（有原话：`回学校干啥呀` `因为啥呀`），删掉。
+- 「不安慰对方情绪」改成正面规则「不给情绪安慰，直接分析、给方案」。
+- 模型观察里的「用感叹号夸张抱怨小事」删掉（统计里感叹号几乎为 0）。
+
+**手写版没丢**：`personas/zhaoming.manual/` 原样保留（persona.md / style.md / transcript.txt），`.gitignore` 的 `personas/*/*` 规则同样忽略它。
+
+**复现步骤**（临时 txt 已删，`personas/zhaoming/transcript.txt` 是清洗后的全文）：① 换说话人标签 ② 媒体行换占位 ③ `forge --file 临时.txt --persona zhaoming --me 吴文哲 --friend 赵明 --display 赵明 --source wechat`。全量 142 块在 DSH 插件里跑完，工具没声明 `timeoutMs`，不受 `dsh-tool-call-timeout-policy` 切断。
+
 ## 用户的长期愿景（2026-10-20 原话整理）
 
 1. **DSH 插件中心**：用 DSH 的人都能装，把自己的语气/性格传给 AI。
@@ -337,6 +362,7 @@ MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插�
 
 ## 下一步（优先级）
 
+0. **先读 `docs/retro-2026-10-21-zhaoming.md`**（2026-10-21 由另一个会话跑完 zhaoming 全量蒸馏后写的 20 条复盘：A 结果与数据风险 / B 耗时坑 / C 文档与验证 / D 环境提示）。最要紧三条：**A1** 插件跑的是 npm 上的 `dist`，改 `src/` 不生效（建议在两个工具的结果里打印 `version` 和 `ROOT`，一眼看出跑的是哪份代码）；**A4** 导出附件行带真实姓名和学号，`redact` 打不到（补一条「连续 12 位数字」规则）；**A5** `forge` 只备份 `persona.md`，`style.md` / `transcript.txt` 会被直接覆盖。用户点名最值当做的：`prepare` 命令（说话人改名 + 媒体行换占位 + 学号打码合成一条命令）。还有 C3 的验证：holdout 还剩 817 条，新旧两版出同一批题混排盲测，才能知道全量版到底有没有比手写版更像。
 1. **试跑公开示例**：`node src/cli/index.ts forge --file examples/public/transcript.txt --persona demo --me 我 --display 阿凯`（需 key，3 块调用）。跑完和 `examples/public/persona.md` 对比。
 2. **合并旧草稿到 `personas/dennis/persona.md`**：只合并用户确认过的条目（`腿骨折花两万`、`被骂 cnmd 只回"健身去"不接梗` 等仍待确认）。
 3. **补 lore**：`personas/dennis/lore.md` 末尾有「待补充」清单。
