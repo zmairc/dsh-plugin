@@ -58,6 +58,7 @@
     "forge": "node src/cli/index.ts forge",
     "mcp": "node src/mcp/server.ts"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "dependencies": {
+    "@zmairc/persona-forge": "^0.1.0"
+  }
 }

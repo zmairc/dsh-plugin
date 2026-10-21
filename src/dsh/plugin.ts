@@ -154,6 +154,7 @@ export function apply(ctx: { tools: { register: (tool: unknown) => void } }): vo
         description: '可选，之前的几轮对话，按时间顺序',
         items: {
           type: 'object',
+          additionalProperties: false,
           properties: {
             role: { type: 'string', required: true, enum: ['user', 'assistant'] },
             content: { type: 'string', required: true },
