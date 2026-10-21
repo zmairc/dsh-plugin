@@ -7,6 +7,7 @@ data/
 dist/
 *.tgz
 .tmp-pkgtest/
+.tmp-runtime/
 
 # ── 真实聊天记录：任何情况下都不入库 ──
 personas/*/transcript.txt

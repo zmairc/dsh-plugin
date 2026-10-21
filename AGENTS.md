@@ -27,7 +27,7 @@ node src/cli/index.ts <命令>
 | QQ 机器人 | ❌ 未做 | — |
 | 记忆检索（FTS5） | ❌ 未做 | — |
 
-测试：`node --test --test-isolation=none "tests/*.test.ts"`（83 项全绿）
+测试：`node --test --test-isolation=none "tests/*.test.ts"`（90 项全绿）
 
 ## 第一次 distill 实测结论（dennis，11/11 块成功）
 
@@ -256,6 +256,30 @@ MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插�
 - 未做：npm 发布（需要 npm 账号）、GitHub 仓库、LICENSE。
 - **key 仍走 `.env`**：插件由 DSH 进程加载，读不到用户 shell 的环境变量。
 
+### 发布形态：必须发编译后的 `dist/`
+
+**Node 拒绝在 `node_modules` 里剥离 TypeScript**（`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`）。源码入口 `src/dsh/plugin.ts` 只能本地跑，装进 profile 就崩。所以：
+
+- `scripts/build.ts` 把 `src/**/*.ts` 剥离类型、改写导入为 `.js`，写到 `dist/`（20 个文件）。
+- `package.json` 的 `main` / `exports` / `bin` 全部指向 `dist/*.js`，`files` 只发 `dist` 不发 `src`。
+- `prepublishOnly` 在发布前重新构建，所以 `dist/` 不必入库（`.gitignore` 已忽略）。
+
+**验证方式（每次发版都做）**：`npm pack` 到 `.tmp-pkgtest/`，把解出的包放进一个模拟 profile 的布局，再 `node` 里 `import('@zmairc/persona-forge')` 并调用 `apply(ctx)`。DSH 解析 `@deepseek-ai/dsh-tools` 靠的是 `$DSH_HOME/profiles/node_modules`（安装依赖闭包，junction 指到 dsh 安装目录），所以模拟时把该目录 junction 到 `node_modules/@deepseek-ai` 即可，不需要真装。
+
+### 0.1.2 发废了：不要在本机测试包里 `npm install` 打包文件
+
+**症状**：`dsh plugin --profile web add @zmairc/persona-forge@0.1.2` 报
+`Failed to resolve dependency: Could not install from "C:\Users\lenovo\.dsh\profiles\web\zmairc-persona-forge-0.1.2.tgz" as it does not exist.`
+
+**根因**：`package.json` 里留了一条自依赖 —— `"dependencies": {"@zmairc/persona-forge": "file:zmairc-persona-forge-0.1.2.tgz"}`。它是之前用 `npm install ./xxx.tgz` 在本项目里试装打出来的包时被 npm 写进去的，然后跟着一起提交、一起发布了。pnpm 在 profile 目录装包时照着这条去 profile 目录找那个 tgz，找不到就整体失败。0.1.1 也带自依赖（`^0.1.0`），只是恰好能解析到 registry，所以没报错。
+
+**排查路径**（下次直接照抄）：读 registry 元数据的 `dependencies` 字段，而不是盯着 pnpm 的报错猜
+→ `https://registry.npmjs.org/@zmairc/persona-forge`。**pnpm 的报错位置指向哪里，就往那个包自己的 manifest 里找那条路径从哪来。**
+
+**防复发**：`tests/package.test.ts` 六项守护 —— 不许自依赖、不许 `file:`/`link:`/`.tgz` 依赖、`main`/`exports`/`bin` 必须是 `dist/*.js`、`files` 必须含 `dist` 且不含 `src`、`dsh.bundle.patch` 必须存在、版本号是 semver。
+
+**教训**：本机试装打包产物要在**项目目录之外**的临时目录做（如 `.tmp-pkgtest/`），永远别在项目根 `npm install <tarball>`——它会改你自己的 `package.json` 并跟着发布出去。
+
 **API key**：`$env:PERSONAFORGE_API_KEY` 或项目根的 `.env`。`HKCU\Environment` 里那份历史 key 已删除（2026-10-20，原长度 35）。`start-chat.ps1` 已无明文。
 
 **安全**：`personas/*/transcript.txt` 和 `data/` 含真实聊天记录，`.gitignore` 已覆盖。要开源必须脱敏。
@@ -281,12 +305,12 @@ MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插�
 - ✅ **README** 补了「先看一个例子」「一条命令生成人设」「作为 MCP 插件」三节。
 - ✅ 首次提交完成（`2d24437`），LICENSE 已加（MIT）。
 - ✅ **GitHub 仓库**：https://github.com/zmairc/dsh-plugin（原 persona-forge，用户改名后同步；最新 commit `730548e`）
-- ✅ **npm 包**：`@zmairc/persona-forge@0.1.0` 已发布（2026-10-20），`npm view` 可查
+- ✅ **npm 包**：`@zmairc/persona-forge` 已发布，最新 `0.1.2`（2026-10-21）
   - 原想用 `persona-forge`，npm 以「与已有包 `personaforge` 太相似」拒绝，改用 scoped 包
   - npm 账号 `zmairc` 已开 2FA（npm 强制：发布必须 2FA）
-- ⬜ **GitHub Topics 加 `dsh-plugin`**（用户没找到入口，明天做；不加爬虫扫不到）
-- ⬜ **提交 dsh-plugin.org/zh/submit**
-- ⬜ 本地验证：`dsh plugin --profile web add @zmairc/persona-forge`（从 npm 真实安装，不是 link）
+  - 版本线：`0.1.0` 入口指向 `src/*.ts` → 装进 profile 必崩；`0.1.1` 同样，且带自依赖；`0.1.2` 改成 `dist/` 但**自依赖没去掉** → pnpm 直接装不上；**`0.1.3` 是第一个能真正装上并加载的版本**，对外只推 `>= 0.1.3`
+- ⬜ **发布 0.1.3**（修掉自依赖；必须先 `git push`，再在用户自己的 PowerShell 里 `npm publish`，需 2FA）
+- ⬜ **本地验证**：`dsh plugin --profile web add @zmairc/persona-forge@0.1.3`，启动 `dsh web` 后确认 `forge_persona` / `chat_persona` 出现
 
 ## 用户的长期愿景（2026-10-20 原话整理）
 
