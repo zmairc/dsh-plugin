@@ -4,6 +4,9 @@ data/
 .env
 .DS_Store
 .npm-cache/
+dist/
+*.tgz
+.tmp-pkgtest/
 
 # ── 真实聊天记录：任何情况下都不入库 ──
 personas/*/transcript.txt

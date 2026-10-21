@@ -1,6 +1,6 @@
 {
   "name": "@zmairc/persona-forge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "把聊天记录蒸馏成可扮演的人设：给 DSH 加两个工具，forge_persona 生成人设、chat_persona 按人设对话。",
   "private": false,
   "license": "MIT",
@@ -17,16 +17,16 @@
     "url": "https://github.com/zmairc/dsh-plugin/issues"
   },
   "type": "module",
-  "main": "src/dsh/plugin.ts",
+  "main": "dist/dsh/plugin.js",
   "exports": {
-    ".": "./src/dsh/plugin.ts"
+    ".": "./dist/dsh/plugin.js"
   },
   "engines": {
     "node": ">=23.6"
   },
   "bin": {
-    "personaforge": "src/cli/index.ts",
-    "personaforge-mcp": "src/mcp/server.ts"
+    "personaforge": "dist/cli/index.js",
+    "personaforge-mcp": "dist/mcp/server.js"
   },
   "keywords": [
     "dsh",
@@ -42,15 +42,18 @@
     }
   },
   "files": [
-    "src/**/*.ts",
+    "dist",
     "cordis.patch.yml",
     "README.md",
+    "LICENSE",
     "examples/public"
   ],
   "peerDependencies": {
     "@deepseek-ai/dsh-tools": "^0.1.5-rc.2"
   },
   "scripts": {
+    "build": "node scripts/build.ts",
+    "prepublishOnly": "node scripts/build.ts",
     "test": "node --test \"tests/*.test.ts\"",
     "smoke": "node scripts/smoke.ts",
     "stats": "node src/cli/index.ts stats",
@@ -59,6 +62,6 @@
     "mcp": "node src/mcp/server.ts"
   },
   "dependencies": {
-    "@zmairc/persona-forge": "^0.1.0"
+    "@zmairc/persona-forge": "file:zmairc-persona-forge-0.1.2.tgz"
   }
 }
