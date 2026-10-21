@@ -17,3 +17,4 @@ personas/*/style.md
 personas/*/persona.draft.md
 personas/*/*.prev.md
 personas/*/persona.draft.hand.md
+package-lock.json
