@@ -280,7 +280,7 @@ MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插�
 - ✅ **公开示例**：`examples/public/`，含合成 118 条对话（`transcript.txt`）、示例人设（`persona.md`）、统计指纹（`style.md`）、说明（`README.md`）。不含任何真人数据，已确认不被 `.gitignore` 忽略。
 - ✅ **README** 补了「先看一个例子」「一条命令生成人设」「作为 MCP 插件」三节。
 - ✅ 首次提交完成（`2d24437`），LICENSE 已加（MIT）。
-- ✅ **GitHub 仓库**：https://github.com/zmairc/persona-forge（最新 commit `bcfa7d4`，工作区干净）
+- ✅ **GitHub 仓库**：https://github.com/zmairc/dsh-plugin（原 persona-forge，用户改名后同步；最新 commit `730548e`）
 - ✅ **npm 包**：`@zmairc/persona-forge@0.1.0` 已发布（2026-10-20），`npm view` 可查
   - 原想用 `persona-forge`，npm 以「与已有包 `personaforge` 太相似」拒绝，改用 scoped 包
   - npm 账号 `zmairc` 已开 2FA（npm 强制：发布必须 2FA）

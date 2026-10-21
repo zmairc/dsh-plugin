@@ -10,11 +10,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zmairc/persona-forge.git"
+    "url": "git+https://github.com/zmairc/dsh-plugin.git"
   },
-  "homepage": "https://github.com/zmairc/persona-forge#readme",
+  "homepage": "https://github.com/zmairc/dsh-plugin#readme",
   "bugs": {
-    "url": "https://github.com/zmairc/persona-forge/issues"
+    "url": "https://github.com/zmairc/dsh-plugin/issues"
   },
   "type": "module",
   "main": "src/dsh/plugin.ts",
