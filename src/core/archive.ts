@@ -1,16 +1,36 @@
 /**
  * Archive storage: paths, JSONL read/write, and text files.
  *
- * Everything resolves from the repository root rather than the process working
+ * Everything resolves from one root directory rather than the process working
  * directory, so the CLI behaves the same however it is invoked.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** Repository root, resolved from this module. */
-export const ROOT = fileURLToPath(new URL('../../', import.meta.url))
+/**
+ * Pick the directory that holds `data/` and `personas/`.
+ *
+ * In a checkout the module's own two-level walk lands on the repository root,
+ * which is what the CLI and the tests expect. Installed from npm that same walk
+ * lands on the package inside `node_modules` — personas written there would be
+ * deleted by the next install, so a packaged plugin falls back to the caller's
+ * working directory instead. `PERSONAFORGE_ROOT` overrides both.
+ * @param env - process environment, for the override.
+ * @param moduleDir - the directory two levels above this module.
+ * @param cwd - the process working directory.
+ * @returns an absolute directory path.
+ */
+export function resolveRoot(env: Record<string, string | undefined>, moduleDir: string, cwd: string): string {
+  const override = env.PERSONAFORGE_ROOT
+  if (override !== undefined && override.trim().length > 0) return resolve(override)
+  if (moduleDir.includes(`${sep}node_modules${sep}`)) return resolve(cwd)
+  return resolve(moduleDir)
+}
+
+/** Directory that `data/` and `personas/` live under. */
+export const ROOT = resolveRoot(process.env, fileURLToPath(new URL('../../', import.meta.url)), process.cwd())
 
 /** Absolute path under `data/`, creating no directory. */
 export function dataPath(...parts: string[]): string {

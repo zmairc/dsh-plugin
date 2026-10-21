@@ -21,11 +21,13 @@ dsh plugin --profile web add @zmairc/persona-forge
 | `forge_persona` | 给一个 txt 路径，自动生成人设 |
 | `chat_persona` | 给一个人设名和一句话，按那个人的口吻回复 |
 
-需要 Node 24+，以及一个 OpenAI 兼容的模型端点（默认 DeepSeek）。key 放在项目根目录的 `.env`：
+需要 Node 24+，以及一个 OpenAI 兼容的模型端点（默认 DeepSeek）。key 放在 `.env`：
 
 ```
 PERSONAFORGE_API_KEY=sk-...
 ```
+
+`.env` 和生成的人设都落在**你启动 `dsh` 时所在的目录**（`personas/`、`data/`）；想放到别处就设 `PERSONAFORGE_ROOT`。这样升级插件不会带走你的人设——装成包之后它不会往 `node_modules` 里写东西。
 
 本地开发、或者改了代码想立刻试，用 `link:` 装当前目录：
 

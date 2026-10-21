@@ -27,7 +27,7 @@ node src/cli/index.ts <命令>
 | QQ 机器人 | ❌ 未做 | — |
 | 记忆检索（FTS5） | ❌ 未做 | — |
 
-测试：`node --test --test-isolation=none "tests/*.test.ts"`（90 项全绿）
+测试：`node --test --test-isolation=none "tests/*.test.ts"`（94 项全绿）
 
 ## 第一次 distill 实测结论（dennis，11/11 块成功）
 
@@ -264,7 +264,16 @@ MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插�
 - `package.json` 的 `main` / `exports` / `bin` 全部指向 `dist/*.js`，`files` 只发 `dist` 不发 `src`。
 - `prepublishOnly` 在发布前重新构建，所以 `dist/` 不必入库（`.gitignore` 已忽略）。
 
-**验证方式（每次发版都做）**：`npm pack` 到 `.tmp-pkgtest/`，把解出的包放进一个模拟 profile 的布局，再 `node` 里 `import('@zmairc/persona-forge')` 并调用 `apply(ctx)`。DSH 解析 `@deepseek-ai/dsh-tools` 靠的是 `$DSH_HOME/profiles/node_modules`（安装依赖闭包，junction 指到 dsh 安装目录），所以模拟时把该目录 junction 到 `node_modules/@deepseek-ai` 即可，不需要真装。
+**验证方式（每次发版都做）**：`npm pack` 到 `.tmp-pkgtest/`，解包后把 `package/` 复制到 `.tmp-runtime/node_modules/@zmairc/persona-forge`，再 `node` 里 `import('@zmairc/persona-forge')` 并调用 `apply(ctx)`。DSH 解析 `@deepseek-ai/dsh-tools` 靠的是 `$DSH_HOME/profiles/node_modules`（安装依赖闭包，junction 指到 dsh 安装目录），所以把该目录 junction 到 `node_modules/@deepseek-ai` 就能离线模拟，不需要真装。
+
+**这个验证有个陷阱（踩过一次）**：脚本放在仓库里时，Node 会走**包自引用**，`import('@zmairc/persona-forge')` 直接命中仓库自己的 `dist/`，根本没碰 `node_modules`——看起来通过，其实什么都没验证。修法：在 `.tmp-runtime/` 里放一个 `{"name":"pf-verify","type":"module"}` 的 `package.json`，把这个目录变成独立的包作用域，bare import 才会真的落到 `node_modules`。脚本里必须断言 `import.meta.resolve(...)` 的路径包含 `/node_modules/@zmairc/persona-forge/`。
+（沙箱不允许在系统临时目录建 `node_modules`，所以别把验证目录放到仓库外。）
+
+### 人设写在启动目录，不写进 `node_modules`
+
+`archive.ts` 的 `ROOT` 不能简单取"模块往上两级"：源码里命中仓库根没问题，但装成包之后那两级落在 `node_modules/@zmairc/persona-forge/`，`personas/`、`data/`、`.env` 全会写进包里，下次 `pnpm` 更新直接清掉。
+
+现在 `resolveRoot(env, moduleDir, cwd)`：`PERSONAFORGE_ROOT` 优先；路径里出现 `node_modules` 就用 `process.cwd()`；否则用模块目录（仓库根）。四个单测在 `tests/root.test.ts`。所以插件的行为是——**人设和 `.env` 落在用户启动 `dsh` 时所在的目录**，README 已写明。
 
 ### 0.1.2 发废了：不要在本机测试包里 `npm install` 打包文件
 
