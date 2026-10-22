@@ -1,7 +1,23 @@
-﻿import { test } from 'node:test'
+import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildPredictions, findLeaked, selectSpread } from '../src/cli/eval.ts'
+import { buildPredictions, findLeaked, sameEmoji, sameQuestion, selectSpread } from '../src/cli/eval.ts'
 import type { ChatMessage } from '../src/core/types.ts'
+
+/**
+ * These two live at the very end of `runEval`, after every model call, so a
+ * refactor that drops them stays green in tests until a real run reaches the
+ * summary. Covered here so a missing definition fails immediately instead.
+ */
+
+test('sameQuestion compares the habit, not the text', () => {
+  assert.equal(sameQuestion('走吗？', '走吗'), false)
+  assert.equal(sameQuestion('走吗', '走吧'), true)
+})
+
+test('sameEmoji compares the habit, not the text', () => {
+  assert.equal(sameEmoji('🤔 好', '行'), false)
+  assert.equal(sameEmoji('好', '行'), true)
+})
 
 let counter = 0
 

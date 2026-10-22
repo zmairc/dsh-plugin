@@ -1,4 +1,4 @@
-﻿/**
+/**
  * `eval`: a blind quiz built from the held-out slice.
  *
  * The held-out messages never reach the persona files, so the only way the
@@ -30,6 +30,22 @@ export interface QuizItem {
   context: Prediction['context']
   text: string
   real: boolean
+}
+
+/**
+ * Whether two strings agree on the presence of a question mark.
+ *
+ * Reported only as an objective aside: it says whether the generated line
+ * matches the real one's punctuation habit, not whether it sounds like him.
+ */
+export function sameQuestion(a: string, b: string): boolean {
+  return /[?？]/.test(a) === /[?？]/.test(b)
+}
+
+/** Whether two strings agree on the presence of an emoji. */
+export function sameEmoji(a: string, b: string): boolean {
+  const pattern = /\p{Extended_Pictographic}/u
+  return pattern.test(a) === pattern.test(b)
 }
 
 /**
