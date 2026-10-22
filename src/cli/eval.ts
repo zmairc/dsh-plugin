@@ -1,4 +1,4 @@
-/**
+﻿/**
  * `eval`: a blind quiz built from the held-out slice.
  *
  * The held-out messages never reach the persona files, so the only way the
@@ -6,158 +6,30 @@
  * in random order, half real and half generated, and the reader marks the ones
  * that look made up.
  *
- * Two things that quietly invalidated earlier runs, both handled here:
- *   - a hand-written persona quotes real lines, so some "test" answers are
- *     literally in the system prompt (see `findLeaked`);
- *   - consecutive predictions overlap each other's context, so one answer shows
- *     up in the next question (see `selectSpread`).
+ * The quiz primitives live in `core/evalkit.ts` because `duel` needs the same
+ * selection and leak rules; they are re-exported here for existing callers.
  */
 
-import { complete, LlmError, llmConfigFromEnv, type WireMessage } from '../core/llm.ts'
+import { complete, LlmError, llmConfigFromEnv } from '../core/llm.ts'
 import { buildSystemPrompt, loadPersona } from '../core/persona.ts'
 import { dataPath, readJsonl, readText, writeText } from '../core/archive.ts'
 import type { ChatMessage } from '../core/types.ts'
+import { buildPredictions, findLeaked, normalizeForLeak, selectSpread, shuffle, type Prediction } from '../core/evalkit.ts'
 import { numberFlag, stringFlag, type Flags } from './args.ts'
 
-/** How many preceding messages form the context for one prediction. */
-const CONTEXT_WINDOW = 8
+export { buildPredictions, findLeaked, selectSpread }
+export type { Prediction }
+
 /** How much of the context the quiz shows; the model still gets the full window. */
 const QUIZ_CONTEXT = 2
-
-/** One prediction task: the conversation so far, and the reply that actually happened. */
-export interface Prediction {
-  context: WireMessage[]
-  truth: string
-  /** Position in the holdout, used to keep quiz items from overlapping. */
-  index: number
-}
 
 /** One item in the blind quiz: a reply, what led to it, and whether it is real. */
 export interface QuizItem {
   /** Pairs the real reply with the generated one made from the same context. */
   pair: number
-  context: WireMessage[]
+  context: Prediction['context']
   text: string
   real: boolean
-}
-
-/**
- * Turn a held-out slice into prediction tasks: each one ends where the friend
- * was about to speak, so the real reply is a genuine next turn.
- * @param holdout - held-out messages, sorted by time.
- * @param limit - maximum number of tasks to produce.
- * @returns the constructed tasks.
- */
-export function buildPredictions(holdout: readonly ChatMessage[], limit: number): Prediction[] {
-  const predictions: Prediction[] = []
-  for (let index = 1; index < holdout.length && predictions.length < limit; index += 1) {
-    const message = holdout[index]
-    if (message.role !== 'friend' || message.kind !== 'text' || (message.text ?? '').length === 0) continue
-    if (holdout[index - 1].role !== 'self') continue
-
-    const context: WireMessage[] = []
-    for (const previous of holdout.slice(Math.max(0, index - CONTEXT_WINDOW), index)) {
-      const wire = toWire(previous)
-      if (wire !== null) context.push(wire)
-    }
-    if (context.length === 0) continue
-    predictions.push({ context, truth: message.text as string, index })
-  }
-  return predictions
-}
-
-/**
- * Pick predictions far enough apart that one item's answer is not another
- * item's context. Spacing shrinks only when the slice cannot supply enough
- * items otherwise.
- * @param predictions - candidate tasks, in time order.
- * @param count - desired number of items.
- * @returns the selected tasks, possibly fewer than requested.
- */
-export function selectSpread(predictions: readonly Prediction[], count: number): Prediction[] {
-  let best: Prediction[] = []
-  for (const gap of [5, 4, 3, 2]) {
-    const picked: Prediction[] = []
-    let last = Number.NEGATIVE_INFINITY
-    for (const prediction of predictions) {
-      if (prediction.index - last < gap) continue
-      picked.push(prediction)
-      last = prediction.index
-      if (picked.length === count) return picked
-    }
-    // The slice may be too short for the requested count; keep the widest set.
-    if (picked.length > best.length) best = picked
-  }
-  return best
-}
-
-/** Map an archived message to a wire message, or null when it cannot be used. */
-function toWire(message: ChatMessage): WireMessage | null {
-  if (message.kind !== 'text' || (message.text ?? '').length === 0) return null
-  if (message.role === 'self') return { role: 'user', content: message.text as string }
-  if (message.role === 'friend') return { role: 'assistant', content: message.text as string }
-  return null
-}
-
-/** Fisher-Yates shuffle, so real and generated replies are mixed. */
-function shuffle<T>(items: T[]): T[] {
-  for (let index = items.length - 1; index > 0; index -= 1) {
-    const swap = Math.floor(Math.random() * (index + 1))
-    const temporary = items[index]
-    items[index] = items[swap]
-    items[swap] = temporary
-  }
-  return items
-}
-
-/** Whether two strings agree on the presence of a question mark. */
-function sameQuestion(a: string, b: string): boolean {
-  return /[?？]/.test(a) === /[?？]/.test(b)
-}
-
-/** Whether two strings agree on the presence of an emoji. */
-function sameEmoji(a: string, b: string): boolean {
-  const pattern = /\p{Extended_Pictographic}/u
-  return pattern.test(a) === pattern.test(b)
-}
-
-/**
- * Normalize a line for containment checks: punctuation and whitespace would
- * only hide a verbatim quote that is already in the persona.
- */
-function normalizeForLeak(text: string): string {
-  return text.replace(/[\s。，、！？：；""''「」『』《》…—～·.,!?:;"'()\-]/g, '')
-}
-
-/**
- * Find predictions the persona prompt already answers.
- *
- * A hand-written persona quotes real conversations, and the held-out slice is
- * cut from the same archive, so some "test" answers are literally sitting in
- * the system prompt. A model that sees them just repeats them, which scores as
- * a perfect imitation while proving nothing.
- * @param predictions - candidate prediction tasks.
- * @param system - the full system prompt the model will receive.
- * @returns indexes of predictions whose answer, or whose quoted stretch, the prompt already contains.
- */
-export function findLeaked(predictions: readonly Prediction[], system: string): number[] {
-  const haystack = normalizeForLeak(system)
-  const leaked: number[] = []
-  predictions.forEach((prediction, index) => {
-    const truth = normalizeForLeak(prediction.truth)
-    // Very short answers match by accident; a quote long enough to be unique does not.
-    if (truth.length >= 4 && haystack.includes(truth)) {
-      leaked.push(index)
-      return
-    }
-    const contextHits = prediction.context.filter((wire) => {
-      const text = normalizeForLeak(wire.content)
-      return text.length >= 4 && haystack.includes(text)
-    }).length
-    // Two or more lines from the same window means the whole exchange was quoted.
-    if (contextHits >= 2) leaked.push(index)
-  })
-  return leaked
 }
 
 /**
@@ -186,7 +58,7 @@ export async function runEval(flags: Flags): Promise<void> {
     throw new Error('没有构造出任何用例。留出集太小，把 --holdout 调大或导入更多记录。')
   }
 
-  const leaked = new Set(findLeaked(predictions, system))
+  const leaked = new Set(findLeaked(predictions, [system]))
   const usable = predictions.filter((_, index) => !leaked.has(index))
   if (leaked.size > 0) {
     console.log(`剔除 ${leaked.size} 道泄漏题：真人原话或这段对话已经写进 persona/lore，模型会直接背出来。`)
@@ -305,3 +177,4 @@ export function revealEval(flags: Flags): void {
   const aiCount = entries.filter(([, verdict]) => verdict === 'ai').length
   console.log(`\n共 ${entries.length} 条，其中 AI 编的 ${aiCount} 条。`)
 }
+

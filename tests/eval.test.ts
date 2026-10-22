@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+﻿import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildPredictions, findLeaked, selectSpread } from '../src/cli/eval.ts'
 import type { ChatMessage } from '../src/core/types.ts'
@@ -75,7 +75,7 @@ test('findLeaked flags an answer the persona already quotes', () => {
     { context: [{ role: 'user' as const, content: '今天好热' }], truth: '走' },
   ]
   const system = '# 吴文哲\n\n> 我要是九点多没醒，你给我打电话'
-  assert.deepEqual(findLeaked(predictions, system), [0])
+  assert.deepEqual(findLeaked(predictions, [system]), [0])
 })
 
 test('findLeaked flags a window whose lines were quoted', () => {
@@ -85,12 +85,12 @@ test('findLeaked flags a window whose lines were quoted', () => {
   ]
   const predictions = [{ context, truth: '明天再洗吧' }]
   const system = '> 你：洗不洗衣服\n> 他：我就一身'
-  assert.deepEqual(findLeaked(predictions, system), [0])
+  assert.deepEqual(findLeaked(predictions, [system]), [0])
 })
 
 test('findLeaked leaves an unseen answer alone', () => {
   const predictions = [{ context: [{ role: 'user' as const, content: '在吗' }], truth: '在' }]
-  assert.deepEqual(findLeaked(predictions, '完全不相关的人设'), [])
+  assert.deepEqual(findLeaked(predictions, ['完全不相关的人设']), [])
 })
 
 test('buildPredictions records where each task sits in the holdout', () => {
@@ -109,3 +109,4 @@ test('selectSpread relaxes spacing when the slice is short', () => {
   const picked = selectSpread(predictions, 3)
   assert.deepEqual(picked.map((prediction) => prediction.index), [0, 2, 4])
 })
+

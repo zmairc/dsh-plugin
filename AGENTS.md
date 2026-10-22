@@ -30,13 +30,14 @@ node src/cli/index.ts <命令>
 | 自动蒸馏 `distill` | ✅ 定稿：结构、说话人标签、口头禅过滤、负向规则去重都过了真实数据验证 | `src/core/distill.ts` |
 | 一键流水线 `forge` | ✅ 代码完成：txt → persona.md，支持任意规模 + 抽样控成本 | `src/core/forge.ts` |
 | 盲测 `eval` | ⚠️ 两轮修正后改成混排判断题（10 真 + 10 假），**需重跑才算数** | `src/cli/eval.ts` |
+| 两版对比 `compare` / `duel` | ✅ 新增（2026-10-22）：`compare` 比统计分布（零标注），`duel` 做成对比较（题源逻辑抽到 `core/evalkit.ts`） | `src/cli/compare.ts`、`src/cli/duel.ts`、`src/core/evalkit.ts`、`src/core/compare.ts` |
 | MCP server | ✅ 可用，已挂进 DSH（两个工具：`forge_persona` / `chat_persona`） | `src/mcp/server.ts` |
 | 启动器 | ✅ 可用 | `启动对话.cmd` |
 | 微信/QQ/抖音 导入器 | ❌ 未做，靠手动粘贴 | — |
 | QQ 机器人 | ❌ 未做 | — |
 | 记忆检索（FTS5） | ❌ 未做 | — |
 
-测试：`node --test --test-isolation=none "tests/*.test.ts"`（114 项全绿）
+测试：`node --test --test-isolation=none "tests/*.test.ts"`（121 项全绿）
 
 ## 关键约束（容易踩）
 
@@ -72,7 +73,7 @@ node src/cli/index.ts <命令>
 
 ## 下一步（优先级）
 
-0. **复盘（`docs/retro-2026-10-21-zhaoming.md`）只剩 C3 没做**：817 条 holdout，`zhaoming`（全量）和 `zhaoming.manual`（手写）各出题混排，让用户盲标一遍。需要用户参与。A/B/C 其余 19 条已落地，记录见 `docs/decisions.md` 的「按复盘改进」。
+0. **C3 等你跑一轮**（工具已就绪，见 `docs/decisions.md`）：`node src/cli/index.ts compare --base zhaoming --challenger zhaoming.manual --n 100`（零标注，比统计分布），再 `duel --base zhaoming --challenger zhaoming.manual --n 20`（成对比较，你标 20 题）。两个结论一致才算结论，不一致本身就是发现。
 1. **试跑公开示例**：`node src/cli/index.ts forge --file examples/public/transcript.txt --persona demo --me 我 --display 阿凯`（需 key，3 块调用）。跑完和 `examples/public/persona.md` 对比。
 2. **合并旧草稿到 `personas/dennis/persona.md`**：只合并用户确认过的条目（`腿骨折花两万`、`被骂 cnmd 只回"健身去"不接梗` 等仍待确认）。
 3. **补 lore**：`personas/dennis/lore.md` 末尾有「待补充」清单。

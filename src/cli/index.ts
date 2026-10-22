@@ -9,7 +9,9 @@
 
 import { parseFlags } from './args.ts'
 import { runChat } from './chat.ts'
+import { runCompare } from './compare.ts'
 import { runDistill } from './distill.ts'
+import { runDuel } from './duel.ts'
 import { runEval, revealEval } from './eval.ts'
 import { runForge } from './forge.ts'
 import { runIngest, runSpeakers } from './ingest.ts'
@@ -50,6 +52,13 @@ const USAGE = `persona-forge — 从聊天记录蒸馏一个人的说话方式
   eval     --persona <名字> [--n 10]    从留出集出 2n 条，一半真一半假
                                          让你挑出哪些是 AI 编的
   reveal   --persona <名字>             看盲测答案
+  compare  --base <新版> --challenger <旧版>
+                                         两版回答同一批留出题，比谁更像真实分布
+                                         --n 100           每版生成多少条
+                                         --holdout <名字>  留出集从谁那里读（默认 base）
+  duel     --base <新版> --challenger <旧版> [--n 20]
+                                         同一段对话、两条匿名回复，问「哪条更像他」
+                                         --answers "A,B,…" 评分（20 题里 15 题倾向一边才算显著）
 
 ingest / forge 参数：
   --me <名字,...>   哪一边是你（默认 我）
@@ -96,6 +105,12 @@ async function main(argv: string[]): Promise<void> {
       return
     case 'eval':
       await runEval(flags)
+      return
+    case 'compare':
+      await runCompare(flags)
+      return
+    case 'duel':
+      await runDuel(flags)
       return
     case 'reveal':
       revealEval(flags)
