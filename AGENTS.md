@@ -37,7 +37,7 @@ node src/cli/index.ts <命令>
 | QQ 机器人 | ❌ 未做 | — |
 | 记忆检索（FTS5） | ❌ 未做 | — |
 
-测试：`node --test --test-isolation=none "tests/*.test.ts"`（121 项全绿）
+测试：`node --test --test-isolation=none "tests/*.test.ts"`（126 项全绿）
 
 ## 关键约束（容易踩）
 
@@ -73,7 +73,9 @@ node src/cli/index.ts <命令>
 
 ## 下一步（优先级）
 
-0. **C3 等你跑一轮**（工具已就绪，见 `docs/decisions.md`）：`node src/cli/index.ts compare --base zhaoming --challenger zhaoming.manual --n 100`（零标注，比统计分布），再 `duel --base zhaoming --challenger zhaoming.manual --n 20`（成对比较，你标 20 题）。两个结论一致才算结论，不一致本身就是发现。
+0. **两件事等你**：
+   - **C3 盲测**（工具已就绪，见 `docs/decisions.md`）：`compare --base zhaoming --challenger zhaoming.manual --n 100`（零标注，比统计分布）+ `duel`（成对比较，你标 20 题）。两个结论一致才算数，不一致本身就是发现。
+   - **关系层**（还没做）：`lore.md` 补「关系 / 称呼对照 / 雷区」，`forge` 结尾引导填空。**别做履历**——没有数据支撑的部分就是模型编，会演得比没有更糟。可参考 SillyTavern 的 `scenario` 字段思路，但不要抄实现（那是手写模板，我们的资产是蒸馏）。
 1. **试跑公开示例**：`node src/cli/index.ts forge --file examples/public/transcript.txt --persona demo --me 我 --display 阿凯`（需 key，3 块调用）。跑完和 `examples/public/persona.md` 对比。
 2. **合并旧草稿到 `personas/dennis/persona.md`**：只合并用户确认过的条目（`腿骨折花两万`、`被骂 cnmd 只回"健身去"不接梗` 等仍待确认）。
 3. **补 lore**：`personas/dennis/lore.md` 末尾有「待补充」清单。

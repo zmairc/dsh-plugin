@@ -80,6 +80,8 @@ node src/cli/index.ts forge --file 聊天记录.txt --persona 老王 --me 我
 
 文本很多时加 `--sample 40`：从全部对话里均匀抽 40 块，覆盖不同时间段但控制花费；不加就是全量。
 
+**风格会漂移，可以只取最近的一段**：`--recent 6` 只用最近 6 个月的记录。两年的时间里，同一个人可能从「平均 16 字、7% 用句号」变成「平均 11 字、几乎不用句号」——全量蒸馏会把两个时期的他平均掉，而平均出来的那个人并不存在。判断该不该限制，看中位数和短句占比，**别只看平均长度**（长文分布会让平均值剧烈摆动）。
+
 **试跑不会覆盖正式人设**：如果 `personas/<名字>/persona.md` 已经存在，带 `--sample` 的那次会写到 `persona.sample.md`。每次覆盖 `persona.md`、`style.md`、`transcript.txt` 之前都会先存一份 `.prev` 副本，命令结束会告诉备份到哪。
 
 **耗时与超时**：一次调用一块，所以耗时 ≈ 块数 × 每次模型调用的时间。八千条记录约 140 块，全量跑通常十几分钟；想先估时间就用 `--sample 5` 跑一小份。用 MCP 或 DSH 插件调用时，工具**没有声明 `timeoutMs`**，因此不受工具调用超时策略切断，可以跑完整个全量；只有你的客户端自己设了超时才会中断。
@@ -179,7 +181,7 @@ PowerShell 用 `$env:PERSONAFORGE_API_KEY = "sk-..."`。
 | `stats --persona <name>` | 统计风格指纹 |
 | `stats --file <txt>` | 直接对原始文本统计，不落盘 |
 | `distill --persona <name>` | 让模型读对话，生成 `persona.draft.md` 初稿 |
-| `chat --persona <name>` | 进入扮演对话 |
+| `chat --persona <name> [--as 对方名字]` | 进入扮演对话；`--as` 指定现在跟谁说话（换个人用同一人设时必填） |
 | `eval --persona <name> --n 10` | 出 2n 条回复（一半真人原话、一半 AI 编的），让你挑出 AI 编的 |
 | `reveal --persona <name>` | 对盲测答案 |
 | `compare --base <新版> --challenger <旧版> --n 100` | 两版回答同一批留出题，比长度分布、标点、表情与真实消息的差距（不用人工） |
