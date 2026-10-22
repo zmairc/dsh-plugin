@@ -345,6 +345,8 @@ MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插�
 
 测试 97 → 111 项。新增 `tests/prepare.test.ts`、`tests/redact.test.ts`，以及 `backupFile` 两项。
 
+**升级插件的坑**：`dsh plugin add <包>@<版本>` 会把**精确版本**写进 profile 的 `package.json`，所以之后 `dsh plugin --profile web update <包>` 升不上去（`0.1.3` 这个精确范围里最新还是 `0.1.3`）。升级必须重新 `dsh plugin --profile web add @zmairc/persona-forge@<新版本>`。
+
 **仍未做**（按价值排序，下一轮从这里接）：
 - **B2 进度与花费**：插件 `onProgress: () => {}` 把进度全丢了；`complete()` 还没记 `usage`。改法：进度写 `data/<persona>.progress.log`，结果里汇总 token。
 - **B4 口头禅两套口径**：`style.md` 的 `phrases` 和 `persona.md` 的 `catchphrases` 过滤强度不同，前者只剩 2 条、后者 16 条还夹着 `来/行/好` 这类单字。改法：`annotateCatchphrases` 复用 stats 的过滤，或两个字段改名区分。
