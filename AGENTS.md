@@ -37,7 +37,7 @@ node src/cli/index.ts <命令>
 | QQ 机器人 | ❌ 未做 | — |
 | 记忆检索（FTS5） | ❌ 未做 | — |
 
-测试：`node --test --test-isolation=none "tests/*.test.ts"`（126 项全绿）
+测试：`node --test --test-isolation=none "tests/*.test.ts"`（128 项全绿）
 
 ## 关键约束（容易踩）
 
@@ -71,15 +71,38 @@ node src/cli/index.ts <命令>
 
 这个愿景决定了架构取向：核心（parse / stats / distill / forge / persona）必须和传输层解耦。现在已经是这样——CLI、MCP server、DSH 插件都只是薄壳，未来加 QQ adapter 不用动核心。
 
-## 下一步（优先级）
+## 下一步
 
-0. **两件事等你**：
-   - **C3 盲测**（工具已就绪，见 `docs/decisions.md`）：`compare --base zhaoming --challenger zhaoming.manual --n 100`（零标注，比统计分布）+ `duel`（成对比较，你标 20 题）。两个结论一致才算数，不一致本身就是发现。
-   - **关系层**（还没做）：`lore.md` 补「关系 / 称呼对照 / 雷区」，`forge` 结尾引导填空。**别做履历**——没有数据支撑的部分就是模型编，会演得比没有更糟。可参考 SillyTavern 的 `scenario` 字段思路，但不要抄实现（那是手写模板，我们的资产是蒸馏）。
-1. **试跑公开示例**：`node src/cli/index.ts forge --file examples/public/transcript.txt --persona demo --me 我 --display 阿凯`（需 key，3 块调用）。跑完和 `examples/public/persona.md` 对比。
-2. **合并旧草稿到 `personas/dennis/persona.md`**：只合并用户确认过的条目（`腿骨折花两万`、`被骂 cnmd 只回"健身去"不接梗` 等仍待确认）。
-3. **补 lore**：`personas/dennis/lore.md` 末尾有「待补充」清单。
-4. **然后才考虑**：QQ 机器人（OneBot 11 + NapCat）→ 记忆检索。
+### 先做完的小事
+
+1. **发布 0.1.7**：这批攒了 B2/B4/B7 + `compare`/`duel` + `--recent`/`--as`。
+   ```powershell
+   git push
+   npm publish
+   dsh plugin --profile web add @zmairc/persona-forge@0.1.7
+   ```
+   `update` 升不上去（见 `docs/pitfalls.md`）。
+
+### 已经验证过的，别再重做
+
+- **时效性（`--recent`）被证伪**：最近 6 个月版 `zhaoming6` 的 compare 距离 0.137，比全量版 0.089 更差；eval 准确率 67%。**数据少，模型反而更极端**（「压过头」第三次）。→ 用全量版 `zhaoming`，弃用 `zhaoming6`。
+- **短句已过关，中长句是短板**：盲测漏掉的 5 条 AI 全是 `行` / `去` / `行，你吃啥` / `去哪` / `行，我在门口`；唯一误伤的真人是一句中长句 `几分钟的事，不是还早吗`。dennis 两轮（70%/75%）同一模式。
+- **微信记录 = 微信版的他**：长句、长文结构、面对面的语气都不在数据里。这是数据源的结构性上限，不是代码能补的。用户自己的例子：「跟你对话我喜欢长对话、喜欢鼓励，这些微信里一条都没有」。
+
+### 接着做的三件事（按价值排）
+
+1. **说话规矩**（小，数据支持最硬）：`persona.md` 加一节从统计直接生成的长度与标点规矩。真实：问号 0%、句号 2.1%、逗号 36.2%、平均 11.9 字；生成的在乱用问号句号、平均只有 6.4 字。目标是补中长句这条短板。
+2. **关系层 / 事实层**（中）：`lore.md` 从自由文本改成三个固定字段——**关系 / 事实清单 / 禁区**。理由不是“更像”，是**“不瞎编”**（用户认出 AI 的两条理由是“我记得当时的场景”）。`forge` 结尾当必填清单打印，`chat` 时作为硬约束注入。别做履历：没有数据支撑的部分就是模型编。
+3. **多源输入架构**（大，真正的上限突破）：现在一切都假设“一份 txt 的聊天记录”。语音转写、长文（日记/笔记）、多个聊天对象——三样各自能打开一个现在完全关着的房间。这是动架构，不是加功能。
+
+### 明确不做
+
+- **时效性**：已证伪，见上。
+- **去 GitHub 找 persona 插件改造**：那些是手写 prompt 模板，我们的资产是蒸馏，抄实现等于退回手写。只值得抄 SillyTavern 的 `scenario`（情境）字段思路。
+
+### 更远的（暂缓）
+
+合并 dennis 旧草稿、补 `personas/dennis/lore.md` 的待补充清单、QQ 机器人（OneBot 11 + NapCat）、记忆检索（FTS5）、公开示例试跑。
 
 ## 和用户的协作方式
 
