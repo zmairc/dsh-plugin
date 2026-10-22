@@ -27,7 +27,7 @@ node src/cli/index.ts <命令>
 | QQ 机器人 | ❌ 未做 | — |
 | 记忆检索（FTS5） | ❌ 未做 | — |
 
-测试：`node --test --test-isolation=none "tests/*.test.ts"`（95 项全绿）
+测试：`node --test --test-isolation=none "tests/*.test.ts"`（111 项全绿）
 
 ## 第一次 distill 实测结论（dennis，11/11 块成功）
 
@@ -324,7 +324,33 @@ MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插�
   - 版本线：`0.1.0`/`0.1.1` 入口指向 `src/*.ts` → 装进 profile 必崩；`0.1.2` 改成 `dist/` 但带自依赖 → pnpm 装不上；`0.1.3` 是第一个能装能加载的版本（自依赖已除）；`0.1.4` 与 0.1.3 内容相同，只为绕开 npm staged publish 占号
   - **npm staged publishing 会占版本号**：重复发布同一版本报 `409 Cannot publish over previously staged version`，而本机 npm 11.12.1 没有 `npm stage` 子命令可以清理 → 直接换版本号最快
 - ✅ **插件在用户的 DSH 里跑通了**：`dsh plugin --profile web add @zmairc/persona-forge@0.1.3` → 重启 `dsh web` → `chat_persona(zhaoming)` 回「没，刚躺下。咋了」
-- ⬜ **发布 0.1.5**（会话工作目录修正，见「人设写在会话工作目录」一节）：`git push` 后在用户自己的 PowerShell 里 `npm publish`，再 `dsh plugin --profile web update @zmairc/persona-forge`
+- ⬜ **发布 0.1.6**（这次按复盘做的一批改进，见下一节）：`git push` 后在用户自己的 PowerShell 里 `npm publish`，再 `dsh plugin --profile web update @zmairc/persona-forge`。本地验证顺序：`prepare` → `forge` → `chat_persona`。
+
+## 按复盘改进（0.1.6，2026-10-22）
+
+对照 `docs/retro-2026-10-21-zhaoming.md` 的 20 条，这批做完了 9 条（都能离线测）：
+
+| 条目 | 做了什么 | 位置 |
+|---|---|---|
+| A1 | `forge_persona` 结果最后一行打印 `persona-forge <版本> · ROOT <目录>`；`chat_persona` 不掺诊断信息（它只回那一句话）；README 写清「改 `src/` 不生效，要 build + publish + update」 | `src/dsh/plugin.ts`、`README.md` |
+| A3 | 那个会话的 `MEDIA_LINE` / `mediaPathKind` 修复，97 项测试验收通过后一起提交 | `src/core/parse.ts` |
+| A4 | `redact` 增加「连续 12 位数字 → `[学号]`」，并把名字+学号的附件行一起处理；`redactCounted` 返回命中次数 | `src/core/redact.ts` |
+| A5 | `backupFile()`：`persona.md` / `style.md` / `transcript.txt` 覆盖前都存 `.prev` 副本，`ForgeResult.backups` 返回清单 | `src/core/forge.ts` |
+| B1 | 已有 `persona.md` 且这次带 `--sample` 时，写 `persona.sample.md`，不覆盖正式人设 | `src/core/forge.ts` |
+| B3 | README 补「耗时与超时」：一块一次调用、8000 条约 140 块十几分钟、工具没声明 `timeoutMs` 所以不会被切 | `README.md` |
+| B5 | `style.md` 末尾固定写一行「以上比例都按文字消息条数算」，两版可比 | `src/core/stats.ts` |
+| B6 | 统计块里不再用「你」，改用本人名字（`names.self`），一份人设里「你」只有一种含义 | `src/core/stats.ts`、`forge.ts` |
+| C2+A2 | 新增 `prepare` 命令：说话人改名（只改头部，正文里同字的单条消息不动）+ 媒体行换占位 + 打码，一条命令产出 `.prepared.txt` | `src/core/prepare.ts`、`src/cli/prepare.ts` |
+| B8/B9 | samples 里过滤纯媒体占位 turn；evidence 命中代码特征（`#include`、`{}`、`->` 等）就不再显示 | `src/core/distill.ts` |
+
+测试 97 → 111 项。新增 `tests/prepare.test.ts`、`tests/redact.test.ts`，以及 `backupFile` 两项。
+
+**仍未做**（按价值排序，下一轮从这里接）：
+- **B2 进度与花费**：插件 `onProgress: () => {}` 把进度全丢了；`complete()` 还没记 `usage`。改法：进度写 `data/<persona>.progress.log`，结果里汇总 token。
+- **B4 口头禅两套口径**：`style.md` 的 `phrases` 和 `persona.md` 的 `catchphrases` 过滤强度不同，前者只剩 2 条、后者 16 条还夹着 `来/行/好` 这类单字。改法：`annotateCatchphrases` 复用 stats 的过滤，或两个字段改名区分。
+- **B7 冲突检测**：`lintPersona()`——avoid/humor 写了「不用感叹号/不追问」但统计显示确有使用，就在草稿末尾打警告。`LENGTH_BAN` 已是这个思路，扩展成通用检测。
+- **C1 拆 AGENTS.md**：400+ 行，新会话整篇读成本高。拆成 `docs/pitfalls.md` / `docs/decisions.md`，本文件只留索引和现状。
+- **C3 新旧人设联合盲测**：`data/zhaoming.holdout.jsonl` 有 817 条，分别用 `zhaoming`（全量）和 `zhaoming.manual`（手写）出题混排，让用户标一遍。这是唯一能回答「全量版是否更像」的办法，需要用户参与。
 
 ## zhaoming 全量蒸馏（8165 条，2026-10-21）
 
@@ -362,7 +388,7 @@ MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插�
 
 ## 下一步（优先级）
 
-0. **先读 `docs/retro-2026-10-21-zhaoming.md`**（2026-10-21 由另一个会话跑完 zhaoming 全量蒸馏后写的 20 条复盘：A 结果与数据风险 / B 耗时坑 / C 文档与验证 / D 环境提示）。最要紧三条：**A1** 插件跑的是 npm 上的 `dist`，改 `src/` 不生效（建议在两个工具的结果里打印 `version` 和 `ROOT`，一眼看出跑的是哪份代码）；**A4** 导出附件行带真实姓名和学号，`redact` 打不到（补一条「连续 12 位数字」规则）；**A5** `forge` 只备份 `persona.md`，`style.md` / `transcript.txt` 会被直接覆盖。用户点名最值当做的：`prepare` 命令（说话人改名 + 媒体行换占位 + 学号打码合成一条命令）。还有 C3 的验证：holdout 还剩 817 条，新旧两版出同一批题混排盲测，才能知道全量版到底有没有比手写版更像。
+0. **复盘还剩 5 条没落实**（`docs/retro-2026-10-21-zhaoming.md`，A/B/C 三组已做 9 条，见「按复盘改进」一节）：B2 进度与花费、B4 口头禅两套口径、B7 模型观察与统计冲突检测、C1 拆 AGENTS.md、C3 新旧人设联合盲测。C3 需要用户参与标注，其余都能离线做完。
 1. **试跑公开示例**：`node src/cli/index.ts forge --file examples/public/transcript.txt --persona demo --me 我 --display 阿凯`（需 key，3 块调用）。跑完和 `examples/public/persona.md` 对比。
 2. **合并旧草稿到 `personas/dennis/persona.md`**：只合并用户确认过的条目（`腿骨折花两万`、`被骂 cnmd 只回"健身去"不接梗` 等仍待确认）。
 3. **补 lore**：`personas/dennis/lore.md` 末尾有「待补充」清单。

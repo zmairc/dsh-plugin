@@ -1,6 +1,6 @@
 {
   "name": "@zmairc/persona-forge",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "把聊天记录蒸馏成可扮演的人设：给 DSH 加两个工具，forge_persona 生成人设、chat_persona 按人设对话。",
   "private": false,
   "license": "MIT",

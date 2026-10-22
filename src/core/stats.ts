@@ -316,7 +316,7 @@ export function renderStyleBlock(stats: StyleStats, names: { self: string; frien
         ? `，其中 ${stats.bursts.distribution.map((entry) => `${entry.run} 条占 ${pct(entry.share)}`).join('、')}`
         : ''),
     `- 回复延迟：中位 ${duration(stats.replyDelay.median)}，90 分位 ${duration(stats.replyDelay.p90)}`,
-    `- 主动发起：他 ${pct(stats.initiator.friend)} / 你 ${pct(stats.initiator.self)}`,
+    `- 主动发起：他 ${pct(stats.initiator.friend)} / ${names.self} ${pct(stats.initiator.self)}`,
     `- 问句率：${pct(stats.questionRate)}（带问号，或句尾是 吗/呢/吧/么）`,
     `- 问号字符：${pct(questionMark)}${questionMark < 0.02 ? '（疑问靠语气词，不靠问号）' : ''}`,
     `- 图片表情等非文字消息占比：${pct(stats.mediaRate)}`,
@@ -326,8 +326,12 @@ export function renderStyleBlock(stats: StyleStats, names: { self: string; frien
     lines.push(`- 高频表情：${stats.emojiTop.slice(0, 10).map((entry) => `${entry.token}(${entry.count})`).join('、')}`)
   }
   if (stats.phrases.length > 0) {
-    lines.push(`- 口头禅（相对你明显更常用）：${stats.phrases.slice(0, 10).map((entry) => `${entry.token}(${entry.count})`).join('、')}`)
+    lines.push(`- 口头禅（相对 ${names.self} 明显更常用）：${stats.phrases.slice(0, 10).map((entry) => `${entry.token}(${entry.count})`).join('、')}`)
   }
   lines.push(`- 活跃时段：${peakWindow(stats.hourHistogram)}`)
+  // Two versions of the same persona are only comparable if the unit is
+  // stated: these are shares of text messages, so a version built from a
+  // bigger archive reads lower simply because it has more one-word messages.
+  lines.push('- 以上比例都按「文字消息条数」算，不含图片、语音、文件、系统消息')
   return lines.join('\n')
 }

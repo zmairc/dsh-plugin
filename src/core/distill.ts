@@ -627,9 +627,23 @@ export interface RenderInput {
 /** Longest quote shown beside a behavior; longer ones are pasted documents. */
 const MAX_EVIDENCE_CHARS = 60
 
+/**
+ * A message that is nothing but a media placeholder (`[图片]`, `[语音 2"]`).
+ * Exports carry these as their own messages, and they hold no wording.
+ */
+const MEDIA_PLACEHOLDER = /^\s*\[(?:图片|视频|语音|文件|动画表情|表情|链接|位置|名片|转账|红包|引用|sticker|image|video|voice)[^\]]*\]\s*$/i
+
+/**
+ * Evidence that is pasted source code rather than a spoken line. The model
+ * picks these when the friend answers a question by dumping a snippet
+ * (`#include<stdio.h> …`), which teaches the persona nothing about wording.
+ */
+const CODE_EVIDENCE = /#include|#define|<\/?[a-z]+>|console\.log|function\s*\(|;\s*$|\{|\}|->|=>/
+
 /** Render one behavior with its supporting quote, flattened onto one line. */
 function behaviorLine(trait: Trait, count: number): string {
   let evidence = trait.evidence.replace(/\s+/g, ' ').trim()
+  if (CODE_EVIDENCE.test(evidence)) evidence = ''
   if (evidence.length > MAX_EVIDENCE_CHARS) evidence = `${evidence.slice(0, MAX_EVIDENCE_CHARS)}…`
   const support = evidence.length > 0 ? ` ← \`${evidence}\`` : ''
   const repeated = count > 1 ? `（${count} 块都提到）` : ''
@@ -755,7 +769,11 @@ export function renderDraft(input: RenderInput): string {
   if (merged.samples.length > 0) {
     lines.push('', '## 真实对话（原话，最有用）', '')
     for (const sample of merged.samples.slice(0, 6)) {
-      for (const turn of sample.turns) {
+      // Placeholders like `[语音 2"]` survive verification (they are verbatim
+      // archive lines) but carry no wording, so they only take up space.
+      const turns = sample.turns.filter((turn) => !MEDIA_PLACEHOLDER.test(turn.text))
+      if (turns.length === 0) continue
+      for (const turn of turns) {
         lines.push(`> ${turn.role === 'self' ? '你' : '他'}：${turn.text}`)
       }
       lines.push('')

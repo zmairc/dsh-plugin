@@ -46,6 +46,29 @@ const MEDIA_FILE = /^(?:微信图片|微信视频|微信语音|微信文件|mmex
 /** A placeholder's trailing token that carries no words: a duration or a bare digit. */
 const MEDIA_TRIVIA = /^[\d\s."'秒]+$/
 
+/**
+ * Standalone exporters copy the media path into the body instead of a
+ * placeholder, one per line:
+ *
+ *     media/00001_64c03476W.jpg
+ *     视频：media/00010_47fea3a6.mp4
+ *     附件：高数.docx -> media/00011_高数.docx.docx
+ *
+ * That is export metadata, not something anyone said. Left as text it becomes a
+ * thousand near-identical messages, and the phrase statistics fill up with
+ * filename fragments like `00` and `medi`.
+ */
+export const MEDIA_LINE = /^(?:(?:视频|语音|文件|附件|图片)[：:].*)?\s*media\/\S+$/i
+
+/** Classify a body that is nothing but exported media paths. */
+export function mediaPathKind(lines: readonly string[]): MessageKind {
+  const joined = lines.join(' ')
+  if (/\.(?:mp4|mov|avi|mkv|webm)/i.test(joined)) return 'video'
+  if (/\.(?:amr|silk|m4a|mp3|wav)/i.test(joined)) return 'voice'
+  if (/\.(?:jpg|jpeg|png|gif|webp|dat)/i.test(joined)) return 'image'
+  return 'link'
+}
+
 /** Whether the leftover text beside a media placeholder is export noise rather than content. */
 function isMediaNoise(text: string, kind: MessageKind | null): boolean {
   if (kind === null) return false
@@ -74,6 +97,11 @@ function classifyBody(raw: string): { kind: MessageKind; text?: string } {
   if (trimmed.length === 0) return mediaKind ? { kind: mediaKind } : { kind: 'text' }
   // A filename next to `[图片]` describes the export, not the conversation.
   if (isMediaNoise(trimmed, mediaKind)) return { kind: mediaKind as MessageKind }
+  // Exported media lines are metadata too, even without a bracketed placeholder.
+  const bodyLines = trimmed.split('\n').map((line) => line.trim()).filter((line) => line.length > 0)
+  if (bodyLines.length > 0 && bodyLines.every((line) => MEDIA_LINE.test(line))) {
+    return { kind: mediaPathKind(bodyLines) }
+  }
   // Transfer notices are part of the platform, not something anyone said.
   if (SYSTEM_TEXT.test(trimmed)) return { kind: 'system' }
   return { kind: 'text', text: trimmed }

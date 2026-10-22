@@ -13,17 +13,24 @@ import { runDistill } from './distill.ts'
 import { runEval, revealEval } from './eval.ts'
 import { runForge } from './forge.ts'
 import { runIngest, runSpeakers } from './ingest.ts'
+import { runPrepare } from './prepare.ts'
 import { runStats } from './stats.ts'
 
 const USAGE = `persona-forge — 从聊天记录蒸馏一个人的说话方式
 
+  prepare  --file <原始导出.txt>          把原始导出清洗成能直接喂给 forge 的文本
+                                         --self 我         记录里你自己的标签（默认「我」）
+                                         --as 赵明         把它改写成这个名字
+                                         --out 输出.txt     默认在输入旁边生成 .prepared.txt
+                                         --no-redact       不打码（默认会打码手机号/学号/证件/邮箱/链接）
   forge    --file <聊天记录.txt> --persona <名字>
                                         一条命令跑完解析、统计、蒸馏，直接产出人设
                                          --me 我 --friend 他
                                          --display 真名    人设标题用什么名字
-                                         --sample 40       只均匀抽 40 块（控制花费）
+                                         --sample 40       只均匀抽 40 块（控制花费）；已有
+                                                           persona.md 时写到 persona.sample.md
                                          --chunk 60        每块多少条消息
-                                         --redact          打码手机号、身份证、邮箱、链接
+                                         --redact          打码手机号、学号、身份证、邮箱、链接
   mcp                                   启动 MCP stdio server，供 AI 客户端当插件调用
 
   speakers --file <原始文本>            看识别到了哪些说话人
@@ -49,18 +56,22 @@ ingest / forge 参数：
   --friend <名字>   哪一边要模仿（默认 出现最多的一方）
   --holdout <0-1>   留出比例（默认 0.1）
   --source <name>   wechat / qq / douyin / manual
-  --redact          打码手机号、身份证、邮箱、链接
+  --redact          打码手机号、学号、身份证、邮箱、链接
 
 环境变量：
   PERSONAFORGE_API_KEY / DEEPSEEK_API_KEY
   PERSONAFORGE_BASE_URL   默认 https://api.deepseek.com/v1
   PERSONAFORGE_MODEL      默认 deepseek-chat
+  PERSONAFORGE_ROOT       人设和数据放在哪（默认：仓库根；插件里是会话工作目录）
 `
 
 async function main(argv: string[]): Promise<void> {
   const command = argv[0]
   const flags = parseFlags(argv.slice(1))
   switch (command) {
+    case 'prepare':
+      runPrepare(flags)
+      return
     case 'forge':
       await runForge(flags)
       return

@@ -12,7 +12,7 @@ import { redact } from './redact.ts'
 import { computeStats, renderStyleBlock } from './stats.ts'
 import { annotateCatchphrases, buildChunks, consolidateObservations, observeChunks, renderDraft, verifySamples } from './distill.ts'
 import type { LlmConfig } from './llm.ts'
-import { dataPath, personaPath, readText, writeJsonl, writeText } from './archive.ts'
+import { dataPath, exists, personaPath, readText, writeJsonl, writeText } from './archive.ts'
 
 /** Everything one forge run needs. */
 export interface ForgeOptions {
@@ -52,6 +52,27 @@ export interface ForgeResult {
   failed: number
   personaFile: string
   styleFile: string
+  /** Files that already existed and were saved to `<name>.prev.<ext>`. */
+  backups: string[]
+  /** True when the run wrote `persona.sample.md` instead of `persona.md`. */
+  sampled: boolean
+}
+
+/**
+ * Copy an existing output to `<name>.prev.<ext>` before it is overwritten.
+ *
+ * A forge run rewrites `persona.md`, `style.md`, and `transcript.txt` in the
+ * persona directory. Only the first used to be backed up, so rerunning silently
+ * destroyed a hand-written style block or the cleaned source transcript.
+ * @param path - the file about to be written.
+ * @returns the backup path, or null when there was nothing to back up.
+ */
+export function backupFile(path: string): string | null {
+  const previous = readText(path)
+  if (previous === null) return null
+  const backup = path.replace(/(\.[a-z0-9]+)$/i, '.prev$1')
+  writeText(backup, previous)
+  return backup
 }
 
 /**
@@ -120,10 +141,24 @@ export async function forgePersona(options: ForgeOptions): Promise<ForgeResult> 
   writeJsonl(dataPath(`${options.persona}.jsonl`), train)
   writeJsonl(dataPath(`${options.persona}.holdout.jsonl`), holdout)
 
-  const styleBlock = renderStyleBlock(computeStats(train), { self: '你', friend: friendDisplay })
-  writeText(personaPath(options.persona, 'style.md'), styleBlock + '\n')
+  // Everything written below is overwritten in place on a rerun, so each file
+  // gets a `.prev` copy first and the caller can report what was replaced.
+  const backups: string[] = []
+  const backup = (path: string): void => {
+    const saved = backupFile(path)
+    if (saved !== null) backups.push(saved)
+  }
+
+  // Use the person's own name rather than "you": inside one persona file "你"
+  // means the person being played, and this block used to also mean the wisher.
+  const styleBlock = renderStyleBlock(computeStats(train), { self: selfDisplay, friend: friendDisplay })
+  const styleFile = personaPath(options.persona, 'style.md')
+  backup(styleFile)
+  writeText(styleFile, styleBlock + '\n')
   // Keep the source next to the persona so a rerun needs no external file.
-  writeText(personaPath(options.persona, 'transcript.txt'), raw)
+  const transcriptFile = personaPath(options.persona, 'transcript.txt')
+  backup(transcriptFile)
+  writeText(transcriptFile, raw)
 
   const allChunks = buildChunks(train, options.chunkSize)
   if (allChunks.length === 0) throw new Error('没有可用的对话块，记录可能全是媒体消息。')
@@ -157,9 +192,13 @@ export async function forgePersona(options: ForgeOptions): Promise<ForgeResult> 
 
   const draft = renderDraft({ name: friendDisplay, styleBlock, merged })
   const personaFile = personaPath(options.persona, 'persona.md')
-  const previous = readText(personaFile)
-  if (previous !== null) writeText(personaPath(options.persona, 'persona.prev.md'), previous)
-  writeText(personaFile, draft)
+  // A sampled run is a speed test, not a persona. Writing it over the real file
+  // would hand `chat_persona` a thin draft without anyone noticing, so an
+  // existing persona keeps its name and the sample lands beside it.
+  const sampled = options.sample !== undefined && options.sample > 0 && exists(personaFile)
+  const draftFile = sampled ? personaPath(options.persona, 'persona.sample.md') : personaFile
+  backup(draftFile)
+  writeText(draftFile, draft)
 
   return {
     persona: options.persona,
@@ -171,7 +210,9 @@ export async function forgePersona(options: ForgeOptions): Promise<ForgeResult> 
     chunks: allChunks.length,
     processed: selected.length,
     failed: merged.failedChunks,
-    personaFile,
-    styleFile: personaPath(options.persona, 'style.md'),
+    personaFile: draftFile,
+    styleFile,
+    backups,
+    sampled,
   }
 }

@@ -80,6 +80,20 @@ node src/cli/index.ts forge --file 聊天记录.txt --persona 老王 --me 我
 
 文本很多时加 `--sample 40`：从全部对话里均匀抽 40 块，覆盖不同时间段但控制花费；不加就是全量。
 
+**试跑不会覆盖正式人设**：如果 `personas/<名字>/persona.md` 已经存在，带 `--sample` 的那次会写到 `persona.sample.md`。每次覆盖 `persona.md`、`style.md`、`transcript.txt` 之前都会先存一份 `.prev` 副本，命令结束会告诉备份到哪。
+
+**耗时与超时**：一次调用一块，所以耗时 ≈ 块数 × 每次模型调用的时间。八千条记录约 140 块，全量跑通常十几分钟；想先估时间就用 `--sample 5` 跑一小份。用 MCP 或 DSH 插件调用时，工具**没有声明 `timeoutMs`**，因此不受工具调用超时策略切断，可以跑完整个全量；只有你的客户端自己设了超时才会中断。
+
+## 先清洗原始导出（可选，但建议）
+
+直接拿微信导出跑也能用，但导出里有两类东西会干扰统计：一是把媒体写成独立行（`media/00001_xxx.jpg`），二是附件名里带真实学号。一条命令清掉：
+
+```bash
+node src/cli/index.ts prepare --file 原始导出.txt --self 我 --as 老王 --out 干净.txt
+```
+
+它做三件事：把说话人标签「我」改成你给的名字（这样蒸馏“自己”时草稿里不会满屏 `我：…`）、把媒体行换成 `[图片]/[视频]/[语音]/[文件]` 占位、把手机号 / 学号（连续 12 位数字）/ 身份证 / 卡号 / 邮箱 / 链接打码。不想打码加 `--no-redact`。
+
 ## 作为 DSH 插件
 
 ```bash
@@ -98,6 +112,8 @@ dsh plugin --profile web add @zmairc/persona-forge
 ```bash
 dsh plugin --profile web add link:E:\code\persona-forge
 ```
+
+**插件跑的是编译产物，不是仓库源码。** `dsh plugin add` 装的是包里的 `dist/`，所以改 `src/` 之后：开发期用 `link:` 装、改完 `node scripts/build.ts`、重启 `dsh web`；对外则 `npm publish` 之后 `dsh plugin --profile web update @zmairc/persona-forge`。`forge_persona` 的结果最后一行会打印 `persona-forge <版本> · ROOT <目录>`——一眼就能确认跑的是哪份代码、读的是哪个目录。`chat_persona` 保持只回那句话，不掺诊断信息。
 
 两种方式都需要项目根目录的 `.env` 提供 key——插件由 DSH 进程启动，读不到你 shell 里的环境变量。
 
@@ -157,6 +173,7 @@ PowerShell 用 `$env:PERSONAFORGE_API_KEY = "sk-..."`。
 
 | 命令 | 作用 |
 | --- | --- |
+| `prepare --file <txt> --self 我 --as 老王` | 清洗原始导出：说话人改名、媒体行换占位、学号等打码 |
 | `ingest --file <txt> --persona <name>` | 解析粘贴的原始记录为 `data/<name>.jsonl` |
 | `speakers --file <txt>` | 只列出识别到的说话人，用来确认 `--me` 填谁 |
 | `stats --persona <name>` | 统计风格指纹 |

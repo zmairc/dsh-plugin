@@ -10,10 +10,12 @@
  */
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { readFileSync } from 'node:fs'
 import { LlmError, complete, llmConfigFromEnv } from '../core/llm.ts'
 import { forgePersona, assertSafePersonaName } from '../core/forge.ts'
 import { buildSystemPrompt, loadPersona } from '../core/persona.ts'
 import { loadDotEnv } from '../core/env.ts'
+import { rootDir, setRoot } from '../core/archive.ts'
 import type { Source } from '../core/types.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -23,6 +25,25 @@ export const name = 'persona-forge'
 export const inject = ['tools']
 
 const SOURCES: readonly Source[] = ['wechat', 'qq', 'douyin', 'manual']
+
+/**
+ * Which build of this plugin is answering, and where it reads personas from.
+ *
+ * The installed plugin runs the compiled `dist/` from npm, so editing `src/`
+ * changes nothing until a release and an update — and the failure mode is
+ * silent. Printing both facts in the result makes that visible in one line.
+ * @returns a short diagnostic line.
+ */
+function buildInfo(): string {
+  let version = 'unknown'
+  try {
+    const manifest = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version?: unknown }
+    if (typeof manifest.version === 'string') version = manifest.version
+  } catch {
+    // A missing manifest must not fail a tool call; the line still says where.
+  }
+  return `persona-forge ${version} · ROOT ${rootDir()}`
+}
 
 /**
  * Point persona storage at the session's own workspace.
@@ -87,8 +108,11 @@ async function callForge(args: Record<string, unknown>): Promise<string> {
     `解析 ${result.total} 条（${result.self} / ${result.friend}），训练 ${result.train}，留出 ${result.holdout}`,
     `切成 ${result.chunks} 块，处理 ${result.processed} 块`,
     `覆盖 ${result.chunks - result.failed}/${result.chunks} 块对话`,
+    ...(result.sampled ? ['', '注意：这是抽样试跑，写在 persona.sample.md，正式人设没有被覆盖。'] : []),
+    ...(result.backups.length > 0 ? ['', `覆盖前的旧文件已备份：${result.backups.join('、')}`] : []),
     '',
     '这份人设是自动生成的：统计精确，模型读出来的特征需要人工核对。',
+    buildInfo(),
   ].join('\n')
 }
 

@@ -145,3 +145,34 @@ test('a transfer notice becomes a system message, not talk', () => {
   assert.equal(parsed.messages[0].text, undefined)
   assert.equal(parsed.messages[1].kind, 'text')
 })
+
+test('exported media paths become media kinds, never text', () => {
+  const text = [
+    '---------- 2024-09-25 ----------',
+    '[09:00:00] 老王:',
+    '    media/00001_64c03476W.jpg',
+    '[09:00:10] 老王:',
+    '    视频：media/00010_47fea3a6.mp4',
+    '[09:00:20] 老王:',
+    '    附件：高数.docx -> media/00011_高数.docx.docx',
+    '[09:00:30] 我:',
+    '    在',
+  ].join('\n')
+  const parsed = parseTranscript(text, { ...base, selfNames: ['我'] })
+  assert.deepEqual(parsed.messages.map((message) => message.kind), ['image', 'video', 'link', 'text'])
+  assert.equal(parsed.messages[0].text, undefined)
+  assert.equal(parsed.messages[1].text, undefined)
+  assert.equal(parsed.messages[2].text, undefined)
+  assert.equal(parsed.messages[3].text, '在')
+})
+
+test('a sentence that mentions a media path stays a text message', () => {
+  const text = [
+    '---------- 2024-09-25 ----------',
+    '[09:00:00] 老王:',
+    '    你看 media/00001_64c03476W.jpg 这张',
+  ].join('\n')
+  const parsed = parseTranscript(text, { ...base, selfNames: ['我'] })
+  assert.equal(parsed.messages[0].kind, 'text')
+  assert.equal(parsed.messages[0].text, '你看 media/00001_64c03476W.jpg 这张')
+})

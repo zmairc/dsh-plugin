@@ -75,8 +75,15 @@ export async function runForge(flags: Flags): Promise<void> {
   console.log(`\n\n解析 ${result.total} 条（${result.self} / ${result.friend}）`)
   console.log(`训练 ${result.train} 条，留出 ${result.holdout} 条用于日后盲测`)
   console.log(`切成 ${result.chunks} 块，处理 ${result.processed} 块`)
-  console.log(`\n已生成：personas/${result.persona}/persona.md`)
-  console.log(`风格指纹：personas/${result.persona}/style.md`)
+  console.log(`\n已生成：${result.personaFile}`)
+  console.log(`风格指纹：${result.styleFile}`)
+  if (result.sampled) {
+    console.log(`\n注意：这是抽样试跑，结果写在 persona.sample.md，没有覆盖你的人设。`)
+  }
+  if (result.backups.length > 0) {
+    console.log(`\n覆盖前的旧文件已备份：`)
+    for (const backup of result.backups) console.log(`  ${backup}`)
+  }
   if (result.processed < result.chunks) {
     console.log(`\n注意：只处理了 ${result.processed}/${result.chunks} 块，没覆盖到的对话不会影响统计，但会降低观察的完整度。`)
   }
