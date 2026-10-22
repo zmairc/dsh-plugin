@@ -19,6 +19,8 @@ personas/*/persona.md
 personas/*/lore.md
 personas/*/style.md
 personas/*/persona.draft.md
-personas/*/*.prev.md
+# 备份副本：forge 现在会把 transcript.txt 也存成 .prev.txt，
+# 只挡 .prev.md 的话真实聊天记录会漏进仓库（踩过一次）
+personas/*/*.prev.*
 personas/*/persona.draft.hand.md
 package-lock.json
