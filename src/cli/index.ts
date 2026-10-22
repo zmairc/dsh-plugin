@@ -31,6 +31,7 @@ const USAGE = `persona-forge — 从聊天记录蒸馏一个人的说话方式
                                          --display 真名    人设标题用什么名字
                                          --sample 40       只均匀抽 40 块（控制花费）；已有
                                                            persona.md 时写到 persona.sample.md
+                                         --recent 6        只用最近 6 个月的记录（风格会漂移）
                                          --chunk 60        每块多少条消息
                                          --redact          打码手机号、学号、身份证、邮箱、链接
   mcp                                   启动 MCP stdio server，供 AI 客户端当插件调用
@@ -47,6 +48,7 @@ const USAGE = `persona-forge — 从聊天记录蒸馏一个人的说话方式
   stats    --persona <名字> | --file <原始文本>
                                         输出风格指纹（--markdown 写入 style.md）
   chat     --persona <名字>             进入扮演对话
+                                         --as 对方名字    指定现在跟谁说话（换个人用同一人设时必填）
                                          --actions  允许括号动作表情（默认关）
                                          --disclose 声明这是 AI
   eval     --persona <名字> [--n 10]    从留出集出 2n 条，一半真一半假

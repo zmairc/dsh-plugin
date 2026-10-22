@@ -84,6 +84,7 @@ async function callForge(args: Record<string, unknown>): Promise<string> {
   const chunkSize = typeof args.chunkSize === 'number' && Number.isInteger(args.chunkSize) && args.chunkSize > 0 ? args.chunkSize : 60
   const sample = typeof args.sample === 'number' && Number.isInteger(args.sample) && args.sample > 0 ? args.sample : undefined
   const holdoutRatio = typeof args.sampleHoldout === 'number' && args.sampleHoldout >= 0 && args.sampleHoldout < 1 ? args.sampleHoldout : 0.1
+  const recentMonths = typeof args.recent === 'number' && Number.isInteger(args.recent) && args.recent > 0 ? args.recent : undefined
   const redact = args.redact === true
 
   // A 142-chunk run shows nothing until it ends, so progress goes to a file the
@@ -111,6 +112,7 @@ async function callForge(args: Record<string, unknown>): Promise<string> {
     chunkSize,
     maxChunks: 0,
     ...(sample === undefined ? {} : { sample }),
+    ...(recentMonths === undefined ? {} : { recentMonths }),
     config,
     onProgress: noteProgress,
   })
@@ -124,6 +126,7 @@ async function callForge(args: Record<string, unknown>): Promise<string> {
     `覆盖 ${result.chunks - result.failed}/${result.chunks} 块对话`,
     `累计 ${result.usage.calls} 次模型调用，输入 ${result.usage.promptTokens} / 输出 ${result.usage.completionTokens} token`,
     `进度日志：${progressLog}`,
+    ...(result.recentMonths === undefined ? [] : [`只用了最近 ${result.recentMonths} 个月，丢弃 ${result.droppedByRecent} 条更早的消息`]),
     ...(result.sampled ? ['', '注意：这是抽样试跑，写在 persona.sample.md，正式人设没有被覆盖。'] : []),
     ...(result.backups.length > 0 ? ['', `覆盖前的旧文件已备份：${result.backups.join('、')}`] : []),
     '',
@@ -184,8 +187,9 @@ export function apply(ctx: { tools: { register: (tool: unknown) => void } }): vo
       source: { type: 'string', enum: [...SOURCES], description: '记录来源，默认 manual' },
       chunkSize: { type: 'integer', description: '每次模型调用读多少条消息，默认 60' },
       sample: { type: 'integer', description: '只均匀抽样这么多块来控制花费；不填表示处理全部' },
+      recent: { type: 'integer', description: '只用最近 N 个月的记录（风格会漂移，全量蒸馏等于把两个时期的他平均掉）' },
       sampleHoldout: { type: 'number', description: '留出比例，默认 0.1，用于日后盲测' },
-      redact: { type: 'boolean', description: '打码手机号、身份证、邮箱、链接' },
+      redact: { type: 'boolean', description: '打码手机号、学号、身份证、邮箱、链接' },
     },
     output: {
       schema: {

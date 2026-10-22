@@ -51,6 +51,15 @@ export interface PromptOptions {
    * measured behavior; it stays off unless the session turns it on.
    */
   actions?: boolean
+  /**
+   * Who is on the other side of this conversation.
+   *
+   * A persona is distilled from one relationship: every line in it was said to
+   * the archive owner. Handed to somebody else, it keeps calling them by the
+   * owner's name and keeps the owner's intimacy, so the persona has to be told
+   * who it is actually talking to.
+   */
+  listener?: string
 }
 
 const ROLEPLAY = `你在扮演一个真实存在的普通人，用于私人的回忆与陪伴。
@@ -88,6 +97,18 @@ const ACTIONS = `【动作与表情：已开启】
 - 不写旁白：（气氛有点尴尬）← 错`
 
 /**
+ * Name the person on the other side, and say plainly that the transcript's
+ * counterpart was somebody else.
+ * @param name - who the model is talking to now.
+ * @returns the framing block.
+ */
+function listenerBlock(name: string): string {
+  return `【现在跟谁说话】
+对方叫「${name}」。你的人设是从你和另一个人的聊天记录里学来的，记录里的那个人不是他。
+称呼、亲密度、说话的分寸都按你和「${name}」的实际关系来。不要照着记录里对别人的叫法套过来，也不要假设你们有过记录里那些事。`
+}
+
+/**
  * Build the system prompt for one persona.
  * @param persona - loaded persona.
  * @param options - disclosure and stage-direction policy.
@@ -96,6 +117,8 @@ const ACTIONS = `【动作与表情：已开启】
 export function buildSystemPrompt(persona: Persona, options: PromptOptions): string {
   const parts = [options.disclose ? DISCLOSE : ROLEPLAY]
   if (options.actions ?? false) parts.push('', ACTIONS)
+  const listener = options.listener?.trim() ?? ''
+  if (listener.length > 0) parts.push('', listenerBlock(listener))
   parts.push('', persona.body.trim())
   // Lore follows the speaking style so measured language rules keep their
   // weight; it is a supplement, not a competing preface.

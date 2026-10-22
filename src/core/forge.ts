@@ -36,6 +36,8 @@ export interface ForgeOptions {
   maxChunks: number
   /** When set, evenly keep this many chunks instead of processing all of them. */
   sample?: number
+  /** Keep only the last N months of the archive; 0 or absent means everything. */
+  recentMonths?: number
   config: LlmConfig
   onProgress: (message: string) => void
 }
@@ -59,6 +61,31 @@ export interface ForgeResult {
   sampled: boolean
   /** Tokens and calls this run spent, so a large pass has a visible bill. */
   usage: LlmUsage
+  /** Set when the run only used the most recent months. */
+  recentMonths?: number
+  /** Messages left out by the recency window. */
+  droppedByRecent: number
+}
+
+/** Days per month for the recency window; 30 is close enough and predictable. */
+const DAYS_PER_MONTH = 30
+
+/**
+ * Keep only the most recent `months` of an archive.
+ *
+ * Style drifts. Over two years this project's own archive went from 16.5 to
+ * 11.6 characters a message and from 7.7% to 4.4% full stops, while the median
+ * stayed at 7. A persona forged from everything averages those two people
+ * together, and the average of two people is nobody.
+ * @param messages - archived messages, sorted by time.
+ * @param months - how far back to keep; a non-positive value keeps everything.
+ * @returns the kept messages.
+ */
+export function filterRecent(messages: readonly ChatMessage[], months: number): ChatMessage[] {
+  if (messages.length === 0 || months <= 0) return [...messages]
+  const last = messages[messages.length - 1].ts
+  const cutoff = last - months * DAYS_PER_MONTH * 24 * 60 * 60 * 1000
+  return messages.filter((message) => message.ts >= cutoff)
 }
 
 /**
@@ -135,6 +162,22 @@ export async function forgePersona(options: ForgeOptions): Promise<ForgeResult> 
   const selfDisplay = selfSpeaker?.name ?? options.selfNames[0] ?? '我'
 
   let messages: ChatMessage[] = parsed.messages
+  const recentMonths = options.recentMonths ?? 0
+  let droppedByRecent = 0
+  if (recentMonths > 0) {
+    const kept = filterRecent(messages, recentMonths)
+    droppedByRecent = messages.length - kept.length
+    if (kept.length < 100) {
+      throw new Error(`只保留最近 ${recentMonths} 个月后只剩 ${kept.length} 条，太少。换个小一点的月数，或者去掉 --recent。`)
+    }
+    const friendLeft = kept.filter((message) => message.role === 'friend').length
+    const selfLeft = kept.filter((message) => message.role === 'self').length
+    if (friendLeft === 0 || selfLeft === 0) {
+      throw new Error('这个时间窗口里只有一个人在说话，没法蒸馏。换个大一点的月数。')
+    }
+    messages = kept
+    options.onProgress(`只保留最近 ${recentMonths} 个月：${kept.length} 条（丢弃 ${droppedByRecent} 条更早的）\n`)
+  }
   if (options.redact) {
     messages = messages.map((message) => ({
       ...message,
@@ -221,5 +264,7 @@ export async function forgePersona(options: ForgeOptions): Promise<ForgeResult> 
     backups,
     sampled,
     usage: readUsage(),
+    ...(recentMonths > 0 ? { recentMonths } : {}),
+    droppedByRecent,
   }
 }

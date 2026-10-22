@@ -50,6 +50,10 @@ export async function runForge(flags: Flags): Promise<void> {
   if (holdoutRatio < 0 || holdoutRatio >= 1) {
     throw new Error(`--holdout 必须在 0 到 1 之间，收到 ${holdoutRatio}`)
   }
+  const recentMonths = numberFlag(flags, 'recent', 0)
+  if (recentMonths < 0 || !Number.isInteger(recentMonths)) {
+    throw new Error(`--recent 必须是非负整数（月），收到 ${recentMonths}`)
+  }
 
   const friendName = stringFlag(flags, 'friend')
   const display = stringFlag(flags, 'display')
@@ -68,11 +72,15 @@ export async function runForge(flags: Flags): Promise<void> {
     chunkSize,
     maxChunks,
     ...(sample > 0 ? { sample } : {}),
+    ...(recentMonths > 0 ? { recentMonths } : {}),
     config,
     onProgress: (message) => process.stdout.write(message),
   })
 
   console.log(`\n\n解析 ${result.total} 条（${result.self} / ${result.friend}）`)
+  if (result.recentMonths !== undefined) {
+    console.log(`只用了最近 ${result.recentMonths} 个月，丢弃 ${result.droppedByRecent} 条更早的消息`)
+  }
   console.log(`训练 ${result.train} 条，留出 ${result.holdout} 条用于日后盲测`)
   console.log(`切成 ${result.chunks} 块，处理 ${result.processed} 块`)
   console.log(`累计 ${result.usage.calls} 次模型调用，输入 ${result.usage.promptTokens} / 输出 ${result.usage.completionTokens} token`)

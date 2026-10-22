@@ -20,15 +20,19 @@ const HISTORY_TURNS = 24
  */
 export async function runChat(flags: Flags): Promise<void> {
   const name = stringFlag(flags, 'persona')
-  if (name === undefined) throw new Error('用法：chat --persona <名字> [--actions] [--disclose]')
+  if (name === undefined) throw new Error('用法：chat --persona <名字> [--as 对方名字] [--actions] [--disclose]')
 
   const persona = loadPersona(name)
   const disclose = boolFlag(flags, 'disclose')
   let actions = boolFlag(flags, 'actions')
-  let system = buildSystemPrompt(persona, { disclose, actions })
+  // Who is on the other side. Without it the persona keeps addressing the
+  // archive owner, which is only correct for exactly one caller.
+  const listener = stringFlag(flags, 'as')
+  let system = buildSystemPrompt(persona, { disclose, actions, ...(listener === undefined ? {} : { listener }) })
   const config = llmConfigFromEnv()
 
   console.log(`正在和 ${persona.name} 对话（${config.model} @ ${config.baseUrl}）`)
+  if (listener !== undefined) console.log(`对方身份：${listener}`)
   console.log(`动作/表情：${actions ? '开' : '关'}　输入 /actions 切换，/reset 清空上下文，/exit 退出。\n`)
 
   const readline = createInterface({ input: process.stdin, output: process.stdout })
@@ -53,7 +57,7 @@ export async function runChat(flags: Flags): Promise<void> {
     }
     if (trimmed === '/actions') {
       actions = !actions
-      system = buildSystemPrompt(persona, { disclose, actions })
+      system = buildSystemPrompt(persona, { disclose, actions, ...(listener === undefined ? {} : { listener }) })
       console.log(`（动作/表情：${actions ? '开' : '关'}）\n`)
       continue
     }
