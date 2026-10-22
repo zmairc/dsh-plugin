@@ -11,7 +11,8 @@ import { parseTranscript, splitHoldout } from './parse.ts'
 import { redact } from './redact.ts'
 import { computeStats, renderStyleBlock } from './stats.ts'
 import { annotateCatchphrases, buildChunks, consolidateObservations, observeChunks, renderDraft, verifySamples } from './distill.ts'
-import type { LlmConfig } from './llm.ts'
+import type { LlmConfig, LlmUsage } from './llm.ts'
+import { readUsage, resetUsage } from './llm.ts'
 import { dataPath, exists, personaPath, readText, writeJsonl, writeText } from './archive.ts'
 
 /** Everything one forge run needs. */
@@ -56,6 +57,8 @@ export interface ForgeResult {
   backups: string[]
   /** True when the run wrote `persona.sample.md` instead of `persona.md`. */
   sampled: boolean
+  /** Tokens and calls this run spent, so a large pass has a visible bill. */
+  usage: LlmUsage
 }
 
 /**
@@ -107,6 +110,8 @@ export function assertSafePersonaName(name: string): void {
  */
 export async function forgePersona(options: ForgeOptions): Promise<ForgeResult> {
   assertSafePersonaName(options.persona)
+  // One forge run is one spending session; the caller reads the bill at the end.
+  resetUsage()
 
   const raw = readText(options.file)
   if (raw === null) throw new Error(`读不到文件：${options.file}`)
@@ -151,7 +156,8 @@ export async function forgePersona(options: ForgeOptions): Promise<ForgeResult> 
 
   // Use the person's own name rather than "you": inside one persona file "你"
   // means the person being played, and this block used to also mean the wisher.
-  const styleBlock = renderStyleBlock(computeStats(train), { self: selfDisplay, friend: friendDisplay })
+  const stats = computeStats(train)
+  const styleBlock = renderStyleBlock(stats, { self: selfDisplay, friend: friendDisplay })
   const styleFile = personaPath(options.persona, 'style.md')
   backup(styleFile)
   writeText(styleFile, styleBlock + '\n')
@@ -190,7 +196,7 @@ export async function forgePersona(options: ForgeOptions): Promise<ForgeResult> 
   merged.samples = verifySamples(merged.samples, train)
   merged.catchphrases = annotateCatchphrases(merged.catchphrases, train)
 
-  const draft = renderDraft({ name: friendDisplay, styleBlock, merged })
+  const draft = renderDraft({ name: friendDisplay, styleBlock, merged, stats })
   const personaFile = personaPath(options.persona, 'persona.md')
   // A sampled run is a speed test, not a persona. Writing it over the real file
   // would hand `chat_persona` a thin draft without anyone noticing, so an
@@ -214,5 +220,6 @@ export async function forgePersona(options: ForgeOptions): Promise<ForgeResult> 
     styleFile,
     backups,
     sampled,
+    usage: readUsage(),
   }
 }

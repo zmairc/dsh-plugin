@@ -75,6 +75,7 @@ export async function runForge(flags: Flags): Promise<void> {
   console.log(`\n\n解析 ${result.total} 条（${result.self} / ${result.friend}）`)
   console.log(`训练 ${result.train} 条，留出 ${result.holdout} 条用于日后盲测`)
   console.log(`切成 ${result.chunks} 块，处理 ${result.processed} 块`)
+  console.log(`累计 ${result.usage.calls} 次模型调用，输入 ${result.usage.promptTokens} / 输出 ${result.usage.completionTokens} token`)
   console.log(`\n已生成：${result.personaFile}`)
   console.log(`风格指纹：${result.styleFile}`)
   if (result.sampled) {

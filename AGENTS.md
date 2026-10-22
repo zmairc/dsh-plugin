@@ -2,7 +2,16 @@
 
 从聊天记录里蒸馏一个人的说话风格，做成可移植的人设，让任何 AI 扮演他。
 
-本文件是这个项目的**交接说明**。新会话开始时请先读完它，里面记录了已经验证过的结论和踩过的坑，不要重新摸索。
+**这是交接说明。** 新会话先读这一页就够开工；细节在 `docs/` 里，按需去查，不要一开始全读。
+
+## 文档索引
+
+| 文件 | 什么时候读 |
+|---|---|
+| `docs/decisions.md` | 蒸馏和盲测怎么迭代的、哪些结论已被数据验证、两个人设的核心统计 |
+| `docs/pitfalls.md` | 踩过的坑：发布形态、路径解析、批量导入的脏数据，每条都有症状和排查路径 |
+| `docs/retro-2026-10-21-zhaoming.md` | 赵明全量蒸馏的 20 条复盘，工具改进的主要来源 |
+| `README.md` | 对外文档：装法、命令、隐私边界 |
 
 ## 现状（更新于 dennis/zhaoming 两个人设完成时）
 
@@ -27,137 +36,7 @@ node src/cli/index.ts <命令>
 | QQ 机器人 | ❌ 未做 | — |
 | 记忆检索（FTS5） | ❌ 未做 | — |
 
-测试：`node --test --test-isolation=none "tests/*.test.ts"`（111 项全绿）
-
-## 第一次 distill 实测结论（dennis，11/11 块成功）
-
-能直接用的：真实对话片段（`注意我的用词`、`那是隐私`、`可能纯靠建模吧`），以及"室友偷看""考试只报数字"这类立场。
-
-模型编的（已在新 prompt 里堵）：
-- `addressTerms` 把骂第三人的 `死北京人` `怂包` 当成称呼——真实称呼是「赵明」「老弟」
-- humor 写「用反问句表达荒诞感」，与「351 条里反问 0 次」直接矛盾
-- 口头禅混入上下文词 `错误` `提示` `这` `刚`（某次一起看代码的片段）
-- traits 里「短句连发」同义重复三条
-
-流水线缺的（已改）：
-- samples 全是单问单答，连发 4.0 条/组完全看不出来 → 改成 2–6 条连续 turn
-- 没有负向规则。手写版最有效的是"不安慰、不追问、不用问号、不写括号"，模型只被问"他做什么" → 新增 `avoid` 字段
-- 统计块缺 1–2 字占比；「问句率 6.8%」会被误读成用问号 → 拆成「问句率」和「问号字符 0%」
-- 草稿标题用微信昵称 `dennis` → 默认取 `persona.md` 标题，可用 `--friend` 覆盖
-
-## 第二次 distill（新 prompt，11/11 块）
-
-结构达标：8 条「场景 → 反应 ← 原话」的特征、6 条 `avoid`、称呼正确（老弟/赵明）、样例多轮连发、标题 `# 吴文哲`。
-
-新发现的问题（已修）：**模型会把 samples 的说话人标反，而且两个版本反得不一样**。
-- `如何破局之` 实际是吴文哲（friend），旧版标成了 self
-- `这巧合吧` 实际是赵明（self），新版标成了 friend
-- `n也能要` `你没要n` 实际是吴文哲，旧版标成了 self
-- `跑窗帘那看` 实际是赵明，新旧版都标成了 friend
-
-修法：新增 `verifySamples`（`src/core/distill.ts`），拿每条原话去归档里按角色查，只有一方说过的就改标签，两边都没有的整段丢弃。标点差异忽略。单测 4 项。
-
-**实测严重程度**：拿 `persona.draft.md` 里「真实对话」的 36 条原话逐条核对归档，**20 条说话人标错（55%）**。例如 `我真艹死北京人吗` 其实是吴文哲说的，旧版标成了赵明；`跑窗帘那看` 其实是赵明说的，新旧版都标成了吴文哲。所以 samples 不能直接信，必须过校验。
-
-仍需人工核对（用户已裁决）：口头禅里的 `错误` `提示` `刚` **不是口头禅**，是「一起看代码」那天的上下文词 → prompt 加了"不收某次对话的话题词"，草稿里每条口头禅标上全库出现次数；「不道歉」**成立**（351 条文字里道歉词 0 次），已写进 `persona.md`；立场里的「游戏：看不起挂件型队友」「身材：随口一提」是模型编的，不并入（方向上有点像，但没有证据）。
-
-## 第三次 distill（定稿，11/11 块）
-
-- 说话人校验连续两版生效：33 条原话逐条核对归档，**0 条错标、0 条找不到**。
-- 口头禅过滤：`我(86)` `他(30)` `要(22)` `我也` `然后` `后来` `而且` 这类代词/连接词剔除，16 条 → 12 条，剩下的全部是高频口语：`行(8) 整(7) 走(6) 妈的(5) 每次(4) 几把(4) 反正(4) 可以(4) 艹(3) 呀(3) 我草(3) 我草了(2)`。
-- `avoid` 近义重复按包含关系折叠（不道歉 / 不道歉不客套 只留一条）。
-- 发现并拦住一条会毁人设的规则：模型把「多数时候短」写成 **「不写长句」**。统计里 19% 是长句，这条进人设会让 AI 永远只发短句。prompt 现在明确禁止。**这是「提防压过头」的又一次实例。**
-- 证据里的换行会撑破 Markdown，渲染时压成一行。
-- 用户裁决 `avoid` 最后两条：**「不说谢谢」成立**（都是朋友，不婆婆妈妈，手写版第 14 行已有）；**「不解释原因」是过度概括**——你问他问题他会讲清楚，已写成正面规则「会解释，但不啰嗦」进 `persona.md`。prompt 相应加了一条：不要从「这一次没做」推出「从不做」。
-
-结论：蒸馏流水线（分块 → 观察 → 校验 → 合并 → 渲染）可以定稿。剩下的误差是模型观察本身的准确性，只能靠人工核对，代码堵不住。
-
-## 盲测（eval）：两轮修正
-
-**第一轮（A/B 卷）发现泄漏**：用例 18、19 的 A 和 B 一模一样。原因不是模型太像，是 `persona.md` 的「真实对话」节直接引用了那两句原话，模型在 system prompt 里看到就逐字背出来。修法：`findLeaked`（`src/cli/eval.ts`），出题前扫 persona/lore/style，凡是原话已出现在提示词里的题直接剔除。实测 dennis 的 19 题里泄漏 3 题（`饭还没到吗`、`我就一身`、`明天再洗吧`），剩 16 题。
-
-**第二轮（用户否定了 A/B 设计）**，暴露三个问题：
-1. **题与题泄漏**：每题 context 是前 8 条，下一题的 context 里就带着上一题的答案，连续做等于送分。
-2. **A/B 配对可以蒙**：AI 编的通常更完整，用户靠这个特征就能选对。
-3. **生成质量没兜底**：出现「什么菜」→「你先借我二十」这种接不上上下文的句子。
-
-改成**混排判断题**：出 2n 条（默认 20），其中 n 条真话、n 条 AI 编的，顺序打乱，用户圈出认为 AI 编的。
-- `selectSpread` 让选中点间隔 ≥4，题与题上下文不重叠（实测 16 个可用点能选出 10 个间隔 ≥4 的）。
-- 卷子每题只显示最近 2 条上下文，模型仍用完整 8 条生成。
-- eval 温度降到 0.7（测人设，不测采样随机性）。
-- 生成的句子与真话逐字相同时跳过（那是背课文，不是模仿）。
-
-**方法论代价**：手写人设必须引用原话当证据，引用得越多，能盲测的题越少。以后想要更多可测题，得从 persona 从未引用过的时段切 holdout。
-
-## 盲测结果（2026-10，dennis，20 条混排）
-
-用户凭感觉标注，**准确率 70%**（14/20）：
-
-- **AI 编的 10 条里挑出 5 条**（50%）。被识破的都是答非所问或太完整：`今天得去趟超市，你走不`、`在哪看的`、`那你先练`、`那等着呗`、`就鸡腿饭`。
-- **真人原话 10 条里认出 9 条**（90%）。唯一误判：`你干啥去了` 被当成 AI。
-- **5 条 AI 骗过了他**，全是短应答：`行`、`行呢`、`你买电动车不`、`那个我也填了`、`几点走`。
-
-结论：**短应答层面已经像了**，露馅集中在"接不住上下文"——模型偶尔答非所问，或者答得太懂事。人设里的短句规则生效了，但"对方说啥就接啥"这一层还不够。
-
-针对这一点加了两条规则（**尚未重测**）：
-- `personas/dennis/persona.md`「不知道的事」：接不住就回一个字或 `不知道`，不要另起不相关的话题，附「错/对」对照（`什么菜`→`你先借我二十` 是错的）。
-- `src/core/persona.ts` 的 `ROLEPLAY`：看不懂对方时别硬接，回一个字或问一句短的（所有 persona 通用）。
-
-## 第二轮盲测（加规则后，20 条混排）
-
-**准确率 75%（15/20）**：AI 编的 10 条挑出 7 条（70%，上一轮 50%），真人 10 条认出 8 条（80%，上一轮 90%）。
-
-漏掉的 3 条 AI 仍是短应答：`噢`、`行呢`、`你买电动车不`。
-误伤的 2 条真人：`你干啥去了`、`你在打游戏吗`。
-被识破的 7 条 AI 多是"太懂事/太完整"：`那我先回去了`、`那等着吧`、`那不就完了`、`你到健身房了没`。
-
-**关键发现：两次都把 `你干啥去了` 判成 AI，而它两次都是真人。** 用户把"跳话题/答非所问"当成 AI 特征，但真人也会跳；反过来 AI 的短应答他总放过。所以 70–75% 的天花板里，有一部分来自判断标准本身，不全是人设的差距。
-
-20 题样本的标准误约 10%，两轮 70%/75% 的差别在噪音内，不能据此认定规则有效。
-
-`personas/example/` 下是聊天记录原文（用户的真实数据，**不要提交到公开仓库**）：
-- `transcript.sample.txt` — 2026-08 至 2026-09，约 20 天
-- `transcript.text.txt` — 2025-05 及零散补充，含情绪爆发、驾照、天气
-
-两条人设从同一份记录切出来：
-- `personas/dennis/` — 吴文哲（朋友），407 条
-- `personas/zhaoming/` — 赵明（用户本人），219 条
-
-`data/` 和 `personas/*/transcript.txt` 已在 `.gitignore`。
-
-## 两个人设的核心结论（已验证）
-
-| | dennis 吴文哲 | 赵明 |
-|---|---|---|
-| 平均长度 | 7 字 | 16 字 |
-| 中位 | 5 字 | 9 字 |
-| 90 分位 | 11 字 | 33 字 |
-| 连发 | 4.0 条/组 | 1.9 条/组 |
-| 逗号使用 | 6% | 40% |
-| 句号使用 | 0% | 9% |
-| 表情 | 极少（6 次 `[捂脸]`） | 狂魔（🤔×10，连发三个） |
-| 回复延迟 | 1 分钟 | 0 秒 |
-| 对方诉苦时 | 不安慰，说自己的事 | 先分析再给方案 |
-
-**两个人的 1-2 字短消息比例都接近 20%**，但赵明的长段落比例高得多——他是"要么一个字，要么一整段"的双峰，dennis 是连续碎片。
-
-## 关系设定（用户确认，2026-10）
-
-- 吴文哲 21 岁，计算机科学与技术专业；两人**大一开学认识，现在每天见**。
-- 吴文哲和赵明是**同班同学，不是室友**。写场景时不要编"你俩在宿舍"，室友是吴文哲那边的第三人。
-- 互相称呼：吴文哲叫赵明「赵明」（偶尔「老弟」），赵明叫吴文哲「吴文哲」。
-- 吴文哲的雷区：**被反复暗中窥探**（室友总看他屏幕）、**被说怂**（医院那次当场翻脸）。
-- 最近爱说「受着」：占便宜、或自己觉得做得稍微有点不对时收尾用，就两个字。
-- 已写进 `personas/dennis/persona.md`（第 8、13、136、194–197 行）和 `personas/zhaoming/persona.md`。
-
-## 迭代方法（本项目最值钱的经验）
-
-1. **先统计，再写规则。** 任何一条人设规则都要有统计支撑。"他很幽默"没用，"88% 在 8 字以内"有用。
-2. **每轮拿用户标注的"最不像的句子"反推规则**，不要笼统地"再优化一下"。
-3. **规则要可执行。** 写「错了/对了」的对照，不写形容词。
-4. **提防压过头。** 曾经把长度规则压到"12 字是错的"，用户指出真实数据里 12 字占 7%，属于正常范围。
-5. **禁止动作描述**（除 `/actions` 模式）：真人聊天记录里一条括号都没有。
-6. **不要用反问句收尾**：`那不然呢` `那不就得了` 在 351 条里出现 0 次。
+测试：`node --test --test-isolation=none "tests/*.test.ts"`（114 项全绿）
 
 ## 关键约束（容易踩）
 
@@ -167,150 +46,6 @@ node src/cli/index.ts <命令>
 
 **大规模文本**：`forge` 默认处理全部块，`--sample N` 用 `sampleEvenly` 在全部对话上均匀抽 N 块（不是取前 N 块，那会只剩一个月份）。3 万条消息约 500 块，全量就是 500 次调用；抽 40 块能覆盖所有时间段，成本降一个数量级。代价是低频特征可能漏掉。短语统计已改成"均匀采样 + 计数回填"，不会在 30 万短语处截断。
 
-## forge 首次真跑（demo，样例 553 条）
-
-`forge --file transcript.sample.txt --persona demo --me "^O^"` → 解析 553 条（^O^ 165 / dennis 332），10/10 块成功，写出 `personas/demo/persona.md`。结构正确：统计块、带原话的特征、`avoid`、口头禅带全库次数、多轮连发样本、覆盖 10/10。
-
-生成结果暴露三个问题（已修）：
-1. **称呼混进骂人的话**：`你这他妈`、`你` 被当成称呼 → `isAddressTerm` 过滤脏话词和裸代词。
-2. **`avoid` 出现「不写长段解释」**：和「不写长句」同一个毛病 → `LENGTH_BAN` 正则直接丢弃所有"不长句/不长段"式规则。
-3. **标题用微信昵称**：`# dennis`。新增 `--display`（forge/MCP 都有），开源用户可指定真名。
-
-另外 `刚` 加进口头禅黑名单（用户之前裁定它不是口头禅）。
-
-**重跑验证通过**：`--display 吴文哲` 后标题是 `# 吴文哲`，称呼只剩 `老弟` `赵明`，`avoid` 里不再有「不写长段解释」，口头禅里 `刚` 已被剔除。
-
-**用户正在另开对话做「一键导出微信聊天记录」的小工具**，做完后会用导出的 txt 回来实测 `forge`。导出格式最好是 `昵称` 换行 `时间戳` 换行 `内容`（微信多选复制的 header-pair 布局，`parse.ts` 第一个就试这种）。
-
-## 真实导出实测（2026-10，吴文哲 8188 条，2024-09 ~ 2026-10）
-
-导出路径 `E:\zmairc\wxoutput\导出\吴文哲_20261019_2217\chat.txt`（同目录还有 chat.html 和 media/）。
-
-**新布局 `bracket`**：日期分隔 `---------- 2024-09-25 ----------` + `[22:32:24] 吴文哲:` + 下一行缩进正文。已加进 `parse.ts` 并排第一优先。解析 8165/8188 条（差的 23 条是空消息），吴文哲 4835 / 我 3330。
-
-统计（`stats --file`）：平均 10 字（剔除 18 条千字长文）、中位 5、90 分位 15、8 字以内 75%、1–2 字 19%、连发 3.2 条/组、问号字符 1.0%、表情 `[捂脸]126 [呲牙]123`。和手写版的 7 字/5 字/18%/4.0 同量级，数据更全后数字更稳。
-
-**长文保护**：最长一条 12914 字（4793 条里 38 条 >200 字、18 条 >1000 字）。`renderChunk` 现在单条截断到 300 字并注明 `（共 N 字）`，否则一条长文就能撑爆一段 context。统计均值排除千字长文，否则"平均 26 字"会误导。
-
-分块规模：训练 7348 条 → 146 块，全量 146 次调用；`--sample 40` 抽 40 块。
-
-**全量实测（146/146 块，零失败零重试）**：特征质量最高，已到可直接进人设的程度——「被问问题，先说在忙 ← `一会哈，我做完这个实验报告`」「讲完题，用短问确认 ← `懂了不`」「喊人不应就一直呼叫 ← `呼叫呼叫`」「约事只发短句不解释 ← `中午洗澡去不`」。
-
-全量也放大了两个合并短板（已修）：
-1. **口头禅又混进功能词**：`可` `得` `给我` `明天` `收到转账`。黑名单扩充，并加 `SYSTEM_WORDS` 过滤转账/红包/语音等系统词。实测 16 条 → 7 条：`赵明(125) 行(122) 咋(49) 噢(48) 额(39) 走(35) 嗯(31)`。
-2. **近义规则各占一条**：`不道歉` / `不主动道歉`。包含去重抓不到插词，改用 Levenshtein 相似度（阈值 0.6）去重，traits / avoid / 口头禅 / 立场 / 幽默统一走 `dedupeBySimilarity`。
-
-**全量还暴露了第三个问题（已修）**：146 块合并后每条特征的 `count` 基本都是 1，排序退化成"按文本最短取"，前 8 条变成「用连发短消息接着说」这种泛泛短句，还不如 40 块版。修法：
-- 排序改为 `count` 相同则按 evidence 长度降序（有具体原话的优先）。
-- 新增 `consolidateObservations`（reduce 阶段）：trait 数超过 20 时，**多调一次模型**把 730 条分段观察归纳成 8 条，要求每条能照着演、evidence 只能从原文摘。失败自动回退到未归纳结果，不影响产出。
-
-**最终全量实测（146/146，reduce 711 条 → 8 条）**：特征回到了可执行的粒度——
-- `被问成绩只报数字，不解释 ← 81分`
-- `发消息拆成多条短句连发 ← 赵明 你能不能去 京东 给我取快递 现在`
-- `问复习方法就分步骤列清单 ← 看一章ppt然后看这章的习题…`
-- `突然叫对方全名，紧接着追问具体题号 ← 赵明 你看看 上次现代…`
-- `拒绝帮忙就说不会，让人去看网课 ← 我不会就是不会，我自己都是看网课学的`
-
-最后修的两个渲染问题：
-- 口头禅里混进 32 次的微信系统消息（`如需收钱，请点此升级至最新版本`）→ 口头禅长度上限 6 字。
-- 一条 evidence 是整段抖音口令 → evidence 超 60 字截断加 `…`。
-
-这两处只改渲染层，所以**没有重跑**，直接就地修补了当前 `personas/wuwenzhe/persona.md`。结论：`forge` 主路径（txt → 人设）定稿。
-
-## MCP 插件挂进 DSH（A1 完成）
-
-DSH 自带 `@deepseek-ai/dsh-mcp-client`，但默认没启用。挂载方式：
-
-1. `~/.dsh/profiles/web/cordis.patch.yml` 加：
-
-```yaml
-- insert:
-    - id: persona-forge-mcp
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        transport: stdio
-        serverName: personaforge
-        command: 'C:\Program Files\nodejs\node.exe'
-        args: ['E:\zmairc\persona-forge\src\mcp\server.ts']
-        cwd: 'E:\zmairc\persona-forge'
-        toolCallTimeoutMs: 600000
-        failOnStartupError: false
-```
-
-2. 工具名变成 `mcp__personaforge__forge_persona` 和 `mcp__personaforge__chat_persona`。
-
-3. **key 走项目根的 `.env`**（`.gitignore` 已覆盖）。MCP server 是 DSH 启动的子进程，继承不到用户 PowerShell 窗口里的环境变量，必须读文件。`llmConfigFromEnv()` 现在每次调用都重读 `.env`，父进程留下的空值也会被覆盖。
-
-**踩过的坑**：改完配置后 `patchReload: live` 没有替换掉旧的 MCP 进程，必须**重启 dsh web** 才生效。重启后会话历史保留。
-
-验证结果：`chat_persona` 用 `personas/demo`（阿凯）回了一句「行」——单字、无标点，符合人设。
-
-## DSH 插件化（准备发布到 DSH Plugin Hub）
-
-MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插件：
-
-- 包名 `persona-forge`，入口 `src/dsh/plugin.ts`（cordis 插件：导出 `name` / `inject: ['tools']` / `apply(ctx)`，用 `defineTool` 注册两个工具，`ctx.tools.register(...)`）。
-- `cordis.patch.yml` 声明 bundle patch，`package.json` 加 `dsh.bundle.patch`、`keywords: [dsh, dsh-plugin, ...]`、peerDependency `@deepseek-ai/dsh-tools`。
-- 本地测试：`dsh plugin --profile web add link:E:\zmairc\persona-forge`（会改 profile 的 package.json，需要 danger-full-access）。
-- **发布到 DSH Plugin Hub（dsh-plugin.org）的条件**：GitHub 公开仓库 + 仓库 topic 加 `dsh-plugin` + README 含安装命令 + 导出 `apply(ctx)`。自动扫描收录，初始 `unconfirmed`，人工核实后 `verified`。提交页 dsh-plugin.org/zh/submit。
-- 未做：npm 发布（需要 npm 账号）、GitHub 仓库、LICENSE。
-- **key 仍走 `.env`**：插件由 DSH 进程加载，读不到用户 shell 的环境变量。
-
-### 发布形态：必须发编译后的 `dist/`
-
-**Node 拒绝在 `node_modules` 里剥离 TypeScript**（`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`）。源码入口 `src/dsh/plugin.ts` 只能本地跑，装进 profile 就崩。所以：
-
-- `scripts/build.ts` 把 `src/**/*.ts` 剥离类型、改写导入为 `.js`，写到 `dist/`（20 个文件）。
-- `package.json` 的 `main` / `exports` / `bin` 全部指向 `dist/*.js`，`files` 只发 `dist` 不发 `src`。
-- `prepublishOnly` 在发布前重新构建，所以 `dist/` 不必入库（`.gitignore` 已忽略）。
-
-**验证方式（每次发版都做）**：`npm pack` 到 `.tmp-pkgtest/`，解包后把 `package/` 复制到 `.tmp-runtime/node_modules/@zmairc/persona-forge`，再 `node` 里 `import('@zmairc/persona-forge')` 并调用 `apply(ctx)`。DSH 解析 `@deepseek-ai/dsh-tools` 靠的是 `$DSH_HOME/profiles/node_modules`（安装依赖闭包，junction 指到 dsh 安装目录），所以把该目录 junction 到 `node_modules/@deepseek-ai` 就能离线模拟，不需要真装。
-
-**这个验证有个陷阱（踩过一次）**：脚本放在仓库里时，Node 会走**包自引用**，`import('@zmairc/persona-forge')` 直接命中仓库自己的 `dist/`，根本没碰 `node_modules`——看起来通过，其实什么都没验证。修法：在 `.tmp-runtime/` 里放一个 `{"name":"pf-verify","type":"module"}` 的 `package.json`，把这个目录变成独立的包作用域，bare import 才会真的落到 `node_modules`。脚本里必须断言 `import.meta.resolve(...)` 的路径包含 `/node_modules/@zmairc/persona-forge/`。
-（沙箱不允许在系统临时目录建 `node_modules`，所以别把验证目录放到仓库外。）
-
-### 人设写在会话工作目录，既不写 `node_modules` 也不依赖进程 cwd
-
-`archive.ts` 的根目录不能简单取"模块往上两级"：源码里命中仓库根没问题，但装成包之后那两级落在 `node_modules/@zmairc/persona-forge/`，`personas/`、`data/`、`.env` 全会写进包里，下次 `pnpm` 更新直接清掉。
-
-第一版修法（0.1.3/0.1.4）是 `resolveRoot(env, moduleDir, cwd)`：`PERSONAFORGE_ROOT` 优先；路径里出现 `node_modules` 就用 `process.cwd()`。**这个假设是错的**——DSH 的会话工作目录和 `dsh` 进程的 cwd 是两回事。用户从项目目录起 `dsh web` 才会碰对；若 DSH 是从别处启动的（快捷方式、其它终端、GUI），插件就去错误目录找 `.env`，`chat_persona` 报「缺少 API key」，看起来像没配置 key，实际是路径错了。这个坑真踩过。
-
-0.1.5 的正确做法：`archive.ts` 导出 `rootDir()` / `setRoot(dir)`；插件在每次 `execute(args, exec)` 里先 `retargetToSession(exec)`，从 `exec.agent.session.header.cwd` 取**会话工作目录**再 `setRoot`。这也是 DSH 自己文件工具用的锚点（`dsh-tool-fs`：`const cwd = exec.agent?.session.header.cwd`）。`loadDotEnv()` 的默认路径改成每次调用时 `join(rootDir(), '.env')`，所以重定向根目录会同时重定向 `.env` 查找。
-
-优先级：`PERSONAFORGE_ROOT` > 会话工作目录（插件）/ 模块目录（CLI、MCP、测试）。单测在 `tests/root.test.ts`（含 `setRoot` 往返）。**插件侧不要再在 `apply()` 里读 `.env`**——那时还不知道会话目录。
-
-### 0.1.2 发废了：不要在本机测试包里 `npm install` 打包文件
-
-**症状**：`dsh plugin --profile web add @zmairc/persona-forge@0.1.2` 报
-`Failed to resolve dependency: Could not install from "C:\Users\lenovo\.dsh\profiles\web\zmairc-persona-forge-0.1.2.tgz" as it does not exist.`
-
-**根因**：`package.json` 里留了一条自依赖 —— `"dependencies": {"@zmairc/persona-forge": "file:zmairc-persona-forge-0.1.2.tgz"}`。它是之前用 `npm install ./xxx.tgz` 在本项目里试装打出来的包时被 npm 写进去的，然后跟着一起提交、一起发布了。pnpm 在 profile 目录装包时照着这条去 profile 目录找那个 tgz，找不到就整体失败。0.1.1 也带自依赖（`^0.1.0`），只是恰好能解析到 registry，所以没报错。
-
-**排查路径**（下次直接照抄）：读 registry 元数据的 `dependencies` 字段，而不是盯着 pnpm 的报错猜
-→ `https://registry.npmjs.org/@zmairc/persona-forge`。**pnpm 的报错位置指向哪里，就往那个包自己的 manifest 里找那条路径从哪来。**
-
-**防复发**：`tests/package.test.ts` 六项守护 —— 不许自依赖、不许 `file:`/`link:`/`.tgz` 依赖、`main`/`exports`/`bin` 必须是 `dist/*.js`、`files` 必须含 `dist` 且不含 `src`、`dsh.bundle.patch` 必须存在、版本号是 semver。
-
-**教训**：本机试装打包产物要在**项目目录之外**的临时目录做（如 `.tmp-pkgtest/`），永远别在项目根 `npm install <tarball>`——它会改你自己的 `package.json` 并跟着发布出去。
-
-**API key**：`$env:PERSONAFORGE_API_KEY` 或项目根的 `.env`。`HKCU\Environment` 里那份历史 key 已删除（2026-10-20，原长度 35）。`start-chat.ps1` 已无明文。
-
-**安全**：`personas/*/transcript.txt` 和 `data/` 含真实聊天记录，`.gitignore` 已覆盖。要开源必须脱敏。
-
-## wuwenzhe 盲测（20 条混排，817 条 holdout）
-
-用户标注，**准确率 50%（10/20），等于随机**：
-
-- **AI 编的 10 条只挑出 3 条（30%）**：`熊峰挺上心啊`、`你在哪`、`啥`
-- **真人 10 条认出 7 条（70%）**，误伤 3 条：`你干啥去了`、`我断不了`、`醒了`
-- **7 条 AI 完全骗过他**：`我靠，发错了`、`你过来吧`、`你洗完等我会`、`你练完了？`、`你起得来么`、`洗`、`额`
-
-**`你干啥去了` 第三次被误判成 AI**（前两轮也是真人）。用户把"跳话题"当 AI 特征的偏差非常稳定，不能用来判断人设。
-
-**发现数据 bug**：转账系统消息（`收到转账17.80元。如需收钱，请点此升级至最新版本`）被当成对话，污染了 4 道题的上下文。已修：`parse.ts` 用 `SYSTEM_TEXT` 识别成 `kind='system'`，`buildChunks` 排除 system 消息。80 项测试全绿。
-
-结论：随机水平的盲测说明这版人设已经难以区分，`forge` 生成的人设达标。
-
 ## 开源准备进度（2026-10）
 
 - ✅ **HKCU 里的历史 key 已删除**（`HKCU\Environment\PERSONAFORGE_API_KEY`，原长度 35）。沙箱默认拒绝写注册表，需要 `danger-full-access` 才能删。`start-chat.ps1` 早已无明文。
@@ -318,66 +53,13 @@ MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插�
 - ✅ **README** 补了「先看一个例子」「一条命令生成人设」「作为 MCP 插件」三节。
 - ✅ 首次提交完成（`2d24437`），LICENSE 已加（MIT）。
 - ✅ **GitHub 仓库**：https://github.com/zmairc/dsh-plugin（原 persona-forge，用户改名后同步；最新 commit `730548e`）
-- ✅ **npm 包**：`@zmairc/persona-forge` 已上线 `0.1.3`、`0.1.4`（2026-10-21）
+- ✅ **npm 包**：`@zmairc/persona-forge` 已上线 `0.1.3` → `0.1.6`（2026-10-22）
   - 原想用 `persona-forge`，npm 以「与已有包 `personaforge` 太相似」拒绝，改用 scoped 包
   - npm 账号 `zmairc` 已开 2FA（npm 强制：发布必须 2FA）
-  - 版本线：`0.1.0`/`0.1.1` 入口指向 `src/*.ts` → 装进 profile 必崩；`0.1.2` 改成 `dist/` 但带自依赖 → pnpm 装不上；`0.1.3` 是第一个能装能加载的版本（自依赖已除）；`0.1.4` 与 0.1.3 内容相同，只为绕开 npm staged publish 占号
-  - **npm staged publishing 会占版本号**：重复发布同一版本报 `409 Cannot publish over previously staged version`，而本机 npm 11.12.1 没有 `npm stage` 子命令可以清理 → 直接换版本号最快
-- ✅ **插件在用户的 DSH 里跑通了**：`dsh plugin --profile web add @zmairc/persona-forge@0.1.3` → 重启 `dsh web` → `chat_persona(zhaoming)` 回「没，刚躺下。咋了」
-- ⬜ **发布 0.1.6**（这次按复盘做的一批改进，见下一节）：`git push` 后在用户自己的 PowerShell 里 `npm publish`，再 `dsh plugin --profile web update @zmairc/persona-forge`。本地验证顺序：`prepare` → `forge` → `chat_persona`。
-
-## 按复盘改进（0.1.6，2026-10-22）
-
-对照 `docs/retro-2026-10-21-zhaoming.md` 的 20 条，这批做完了 9 条（都能离线测）：
-
-| 条目 | 做了什么 | 位置 |
-|---|---|---|
-| A1 | `forge_persona` 结果最后一行打印 `persona-forge <版本> · ROOT <目录>`；`chat_persona` 不掺诊断信息（它只回那一句话）；README 写清「改 `src/` 不生效，要 build + publish + update」 | `src/dsh/plugin.ts`、`README.md` |
-| A3 | 那个会话的 `MEDIA_LINE` / `mediaPathKind` 修复，97 项测试验收通过后一起提交 | `src/core/parse.ts` |
-| A4 | `redact` 增加「连续 12 位数字 → `[学号]`」，并把名字+学号的附件行一起处理；`redactCounted` 返回命中次数 | `src/core/redact.ts` |
-| A5 | `backupFile()`：`persona.md` / `style.md` / `transcript.txt` 覆盖前都存 `.prev` 副本，`ForgeResult.backups` 返回清单 | `src/core/forge.ts` |
-| B1 | 已有 `persona.md` 且这次带 `--sample` 时，写 `persona.sample.md`，不覆盖正式人设 | `src/core/forge.ts` |
-| B3 | README 补「耗时与超时」：一块一次调用、8000 条约 140 块十几分钟、工具没声明 `timeoutMs` 所以不会被切 | `README.md` |
-| B5 | `style.md` 末尾固定写一行「以上比例都按文字消息条数算」，两版可比 | `src/core/stats.ts` |
-| B6 | 统计块里不再用「你」，改用本人名字（`names.self`），一份人设里「你」只有一种含义 | `src/core/stats.ts`、`forge.ts` |
-| C2+A2 | 新增 `prepare` 命令：说话人改名（只改头部，正文里同字的单条消息不动）+ 媒体行换占位 + 打码，一条命令产出 `.prepared.txt` | `src/core/prepare.ts`、`src/cli/prepare.ts` |
-| B8/B9 | samples 里过滤纯媒体占位 turn；evidence 命中代码特征（`#include`、`{}`、`->` 等）就不再显示 | `src/core/distill.ts` |
-
-测试 97 → 111 项。新增 `tests/prepare.test.ts`、`tests/redact.test.ts`，以及 `backupFile` 两项。
-
-**升级插件的坑**：`dsh plugin add <包>@<版本>` 会把**精确版本**写进 profile 的 `package.json`，所以之后 `dsh plugin --profile web update <包>` 升不上去（`0.1.3` 这个精确范围里最新还是 `0.1.3`）。升级必须重新 `dsh plugin --profile web add @zmairc/persona-forge@<新版本>`。
-
-**仍未做**（按价值排序，下一轮从这里接）：
-- **B2 进度与花费**：插件 `onProgress: () => {}` 把进度全丢了；`complete()` 还没记 `usage`。改法：进度写 `data/<persona>.progress.log`，结果里汇总 token。
-- **B4 口头禅两套口径**：`style.md` 的 `phrases` 和 `persona.md` 的 `catchphrases` 过滤强度不同，前者只剩 2 条、后者 16 条还夹着 `来/行/好` 这类单字。改法：`annotateCatchphrases` 复用 stats 的过滤，或两个字段改名区分。
-- **B7 冲突检测**：`lintPersona()`——avoid/humor 写了「不用感叹号/不追问」但统计显示确有使用，就在草稿末尾打警告。`LENGTH_BAN` 已是这个思路，扩展成通用检测。
-- **C1 拆 AGENTS.md**：400+ 行，新会话整篇读成本高。拆成 `docs/pitfalls.md` / `docs/decisions.md`，本文件只留索引和现状。
-- **C3 新旧人设联合盲测**：`data/zhaoming.holdout.jsonl` 有 817 条，分别用 `zhaoming`（全量）和 `zhaoming.manual`（手写）出题混排，让用户标一遍。这是唯一能回答「全量版是否更像」的办法，需要用户参与。
-
-## zhaoming 全量蒸馏（8165 条，2026-10-21）
-
-用户要求把赵明的人设从手写版（175 条文字）升级成从微信导出全量跑出来的版本。
-
-**数据源**：`E:\zmairc\wxoutput\导出\吴文哲_20261019_2217\chat.txt`（解析 8165 条：吴文哲 4835 / 我 3330）。
-
-**坑一：默认把吴文哲当 friend。** forge 的 `--me` 是「记录主人」。蒸馏赵明要 `--me 吴文哲 --friend 赵明`。但记录里赵明叫「我」，直接这么传，渲染出来的对话全是 `我：…`，模型容易看反。做法：先把导出里的 `[时间] 我:` 换成 `[时间] 赵明:`（3330 行），生成一份临时 txt 再喂给 forge。
-
-**坑二：media 路径被当成聊天文本。** 这份导出把媒体写成独立一行：`media/00001_64c03476W.jpg`、`视频：media/…`、`附件：x.docx -> media/…`（407 条）。旧 parse 当成 text，短语统计被文件名碎片占满：`00(132) me(117) ia(116) medi(115) edia(115)`。修法两层：
-
-- 临时 txt 里把 media 行换成 `[图片]/[视频]/[语音]/[文件]` 占位（保住媒体占比和消息序列）；
-- `parse.ts` 新增 `MEDIA_LINE` + `mediaPathKind`，整行都是 media 路径的直接归成媒体 kind（3 项单测，97 项全绿）。**插件跑的是 npm 上 0.1.x 的 dist，这次修复要等下次发布才生效。**
-
-**结果**：142/142 块，零失败。统计口径和手写版不一样了（数据多 17 倍）：平均 17 字（手写 15.9）、中位 7（9）、8 字以内 56%、逗号 24%（手写 40%）、句号 7.8%、问号字符 3.5%、1–2 字 14%（手写 25%）、连发 2.1 条/组。手写版「两条完全不同的线」方向没错，但短档占比被高估了。
-
-**人工核对的四处（已改进 persona.md）**：
-- 模型的「他怎么称呼你」里混进了 `赵明`——那是他自己的名字。只留 `吴文哲`/`兄弟`/`bro`。
-- `avoid` 的「不追问对方细节」和手写版「爱追问」冲突（有原话：`回学校干啥呀` `因为啥呀`），删掉。
-- 「不安慰对方情绪」改成正面规则「不给情绪安慰，直接分析、给方案」。
-- 模型观察里的「用感叹号夸张抱怨小事」删掉（统计里感叹号几乎为 0）。
-
-**手写版没丢**：`personas/zhaoming.manual/` 原样保留（persona.md / style.md / transcript.txt），`.gitignore` 的 `personas/*/*` 规则同样忽略它。
-
-**复现步骤**（临时 txt 已删，`personas/zhaoming/transcript.txt` 是清洗后的全文）：① 换说话人标签 ② 媒体行换占位 ③ `forge --file 临时.txt --persona zhaoming --me 吴文哲 --friend 赵明 --display 赵明 --source wechat`。全量 142 块在 DSH 插件里跑完，工具没声明 `timeoutMs`，不受 `dsh-tool-call-timeout-policy` 切断。
+  - 版本线：`0.1.0`/`0.1.1` 入口指向 `src/*.ts` → 装进 profile 必崩；`0.1.2` 带自依赖 → pnpm 装不上；`0.1.3` 第一个能装能加载；`0.1.4` 与 0.1.3 同内容，只为绕开 staged publish 占号；`0.1.5` 会话工作目录修正；`0.1.6` 按复盘改进
+  - 发布相关的坑（staged 占号、token 失效报 404、`update` 升不上去）都在 `docs/pitfalls.md`
+- ✅ **插件在 DSH 里跑通并升到 0.1.6**：`forge_persona` 结果末尾打印 `persona-forge 0.1.6 · ROOT <会话目录>`，三份旧文件覆盖前都会存 `.prev`
+- ⬜ **发布 0.1.7**（B2/B4/B7 这一批）：`npm publish` 之后要用 `dsh plugin --profile web add @zmairc/persona-forge@0.1.7`，**`update` 无效**
 
 ## 用户的长期愿景（2026-10-20 原话整理）
 
@@ -390,7 +72,7 @@ MCP 是外部协议，用户想发到 DSH 插件中心，所以改走原生插�
 
 ## 下一步（优先级）
 
-0. **复盘还剩 5 条没落实**（`docs/retro-2026-10-21-zhaoming.md`，A/B/C 三组已做 9 条，见「按复盘改进」一节）：B2 进度与花费、B4 口头禅两套口径、B7 模型观察与统计冲突检测、C1 拆 AGENTS.md、C3 新旧人设联合盲测。C3 需要用户参与标注，其余都能离线做完。
+0. **复盘（`docs/retro-2026-10-21-zhaoming.md`）只剩 C3 没做**：817 条 holdout，`zhaoming`（全量）和 `zhaoming.manual`（手写）各出题混排，让用户盲标一遍。需要用户参与。A/B/C 其余 19 条已落地，记录见 `docs/decisions.md` 的「按复盘改进」。
 1. **试跑公开示例**：`node src/cli/index.ts forge --file examples/public/transcript.txt --persona demo --me 我 --display 阿凯`（需 key，3 块调用）。跑完和 `examples/public/persona.md` 对比。
 2. **合并旧草稿到 `personas/dennis/persona.md`**：只合并用户确认过的条目（`腿骨折花两万`、`被骂 cnmd 只回"健身去"不接梗` 等仍待确认）。
 3. **补 lore**：`personas/dennis/lore.md` 末尾有「待补充」清单。

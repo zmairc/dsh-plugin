@@ -14,6 +14,7 @@
 
 import type { ChatMessage } from './types.ts'
 import type { LlmConfig, WireMessage } from './llm.ts'
+import type { StyleStats } from './stats.ts'
 import { complete } from './llm.ts'
 
 /** One observed behavior, always paired with the line that supports it. */
@@ -52,7 +53,7 @@ export interface Observation {
 export interface MergedObservation {
   traits: Array<Trait & { count: number }>
   avoid: Array<Trait & { count: number }>
-  catchphrases: Array<{ text: string; count: number; archiveCount?: number }>
+  catchphrases: Array<{ text: string; count: number; archiveCount?: number; selfCount?: number }>
   addressTerms: string[]
   humor: string[]
   conflict: string[]
@@ -333,7 +334,7 @@ const SYSTEM_WORDS = /转账|红包|撤回|语音|通话|图片|文件|位置|�
 export function annotateCatchphrases(
   phrases: ReadonlyArray<{ text: string; count: number }>,
   messages: readonly ChatMessage[],
-): Array<{ text: string; count: number; archiveCount: number }> {
+): Array<{ text: string; count: number; archiveCount: number; selfCount: number }> {
   // `[敲打]` is an emotion code and the model reports it without brackets, so a
   // bracket code in the archive means the "word" is an emoji, not a habit.
   const bracketCodes = new Set<string>()
@@ -342,12 +343,24 @@ export function annotateCatchphrases(
       bracketCodes.add(match[1])
     }
   }
+  const friendText = messages.filter((message) => message.role === 'friend' && message.kind === 'text')
+  const selfText = messages.filter((message) => message.role === 'self' && message.kind === 'text')
+  const countIn = (texts: readonly ChatMessage[], phrase: string): number =>
+    texts.filter((message) => (message.text ?? '').includes(phrase)).length
+
   const annotated = phrases
     .filter((phrase) => isUsableCatchphrase(phrase.text) && !bracketCodes.has(phrase.text.trim()))
     .map((phrase) => ({
       ...phrase,
-      archiveCount: messages.filter((message) => message.role === 'friend' && (message.text ?? '').includes(phrase.text)).length,
+      archiveCount: countIn(friendText, phrase.text),
+      selfCount: countIn(selfText, phrase.text),
     }))
+  // No hard filtering here. `style.md` ranks by "distinctively his" (a strict
+  // n-gram test), while this list is what the model noticed; dropping words
+  // would hide the disagreement instead of showing it. Printing both counts
+  // lets the reader see at a glance that `行` is shared vocabulary while `咋`
+  // is his — which is exactly the judgement the two sections used to disagree
+  // about.
   return annotated.sort((a, b) => b.archiveCount - a.archiveCount || b.count - a.count)
 }
 
@@ -622,6 +635,8 @@ export interface RenderInput {
   name: string
   styleBlock: string
   merged: MergedObservation
+  /** Measured fingerprint, used to flag claims the archive contradicts. */
+  stats?: StyleStats
 }
 
 /** Longest quote shown beside a behavior; longer ones are pasted documents. */
@@ -688,6 +703,40 @@ function dedupeBySimilarity<T>(items: readonly T[], textOf: (item: T) => string)
 }
 
 /**
+ * A claim about a punctuation mark that the archive itself contradicts.
+ *
+ * A model that reads ten chunks will happily write "never uses exclamation
+ * marks" while the statistics say 1.2%. The ban is the most damaging kind of
+ * error — it freezes a real habit out of the persona — so it is reported
+ * instead of silently shipped.
+ */
+const PUNCTUATION_CLAIMS: ReadonlyArray<{ claim: RegExp; mark: string; label: string }> = [
+  { claim: /感叹号|叹号/, mark: '！', label: '感叹号' },
+  { claim: /问号/, mark: '？', label: '问号' },
+]
+
+/**
+ * List contradictions between what the model claimed and what the archive shows.
+ * @param merged - merged observations (traits and avoid rules are both checked).
+ * @param stats - measured fingerprint of the same archive.
+ * @returns one human-readable warning per contradiction.
+ */
+export function lintPersona(merged: MergedObservation, stats: StyleStats): string[] {
+  const warnings: string[] = []
+  const claims = [...merged.avoid, ...merged.traits].map((trait) => trait.behavior)
+  for (const claim of claims) {
+    for (const rule of PUNCTUATION_CLAIMS) {
+      if (!rule.claim.test(claim)) continue
+      const rate = stats.punctuation.find((entry) => entry.mark === rule.mark)?.rate ?? 0
+      // Below half a percent the claim is effectively true; above it, the rule
+      // would make the persona deny something the person does.
+      if (rate > 0.005) warnings.push(`「${claim}」和统计冲突：他的消息里${rule.label}占 ${(rate * 100).toFixed(1)}%`)
+    }
+  }
+  return warnings
+}
+
+/**
  * Render a persona Markdown draft.
  * @param input - name, statistics block, and merged observations.
  * @returns Markdown text, with inferred content clearly separated from measured content.
@@ -735,12 +784,16 @@ export function renderDraft(input: RenderInput): string {
   }
 
   if (merged.catchphrases.length > 0) {
-    lines.push('', '## 口头禅（模型摘录，括号里是全库出现次数）', '')
+    lines.push('', '## 口头禅（他比你更常用，括号里是出现条数）', '')
     const unique = dedupeBySimilarity(merged.catchphrases, (item) => item.text)
     lines.push(
       unique
         .slice(0, 16)
-        .map((item) => `\`${item.text}\`${item.archiveCount === undefined ? '' : `(${item.archiveCount})`}`)
+        .map((item) => {
+          if (item.archiveCount === undefined) return `\`${item.text}\``
+          const owner = item.selfCount !== undefined && item.selfCount > 0 ? ` / 你 ${item.selfCount}` : ''
+          return `\`${item.text}\`(他 ${item.archiveCount}${owner})`
+        })
         .join('　'),
     )
   }
@@ -778,6 +831,13 @@ export function renderDraft(input: RenderInput): string {
       }
       lines.push('')
     }
+  }
+
+  const warnings = input.stats === undefined ? [] : lintPersona(merged, input.stats)
+  if (warnings.length > 0) {
+    lines.push('', '## ⚠️ 和统计对不上的地方（自动检测，先核实再留）', '')
+    lines.push('> 这些规则会让 AI 否认他真的有过的习惯。统计是精确的，模型是猜的，冲突时信统计。', '')
+    for (const warning of warnings) lines.push(`- ${warning}`)
   }
 
   lines.push(

@@ -48,6 +48,39 @@ export class LlmError extends Error {
   }
 }
 
+/** Tokens and calls spent since the last {@link resetUsage}. */
+export interface LlmUsage {
+  promptTokens: number
+  completionTokens: number
+  calls: number
+}
+
+let usage: LlmUsage = { promptTokens: 0, completionTokens: 0, calls: 0 }
+
+/**
+ * Clear the accumulated usage.
+ *
+ * A forge run is one spending session: it resets here at the start and reports
+ * at the end, so "140 calls, 1.2M in / 300k out" is the run's own bill rather
+ * than the process's lifetime total.
+ */
+export function resetUsage(): void {
+  usage = { promptTokens: 0, completionTokens: 0, calls: 0 }
+}
+
+/** What this process spent since the last reset. */
+export function readUsage(): LlmUsage {
+  return { ...usage }
+}
+
+/** Add one response's usage; endpoints that omit it still count the call. */
+function recordUsage(reported: { prompt_tokens?: number; completion_tokens?: number } | undefined): void {
+  usage.calls += 1
+  if (reported === undefined) return
+  usage.promptTokens += reported.prompt_tokens ?? 0
+  usage.completionTokens += reported.completion_tokens ?? 0
+}
+
 /**
  * Run one chat completion.
  * @param config - endpoint, credentials, and sampling settings.
@@ -77,7 +110,9 @@ export async function complete(config: LlmConfig, messages: readonly WireMessage
   }
   const parsed = JSON.parse(body) as {
     choices?: Array<{ message?: { content?: string } }>
+    usage?: { prompt_tokens?: number; completion_tokens?: number }
   }
+  recordUsage(parsed.usage)
   const content = parsed.choices?.[0]?.message?.content
   if (typeof content !== 'string' || content.length === 0) {
     throw new LlmError(`接口返回了空内容：${body.slice(0, 500)}`)

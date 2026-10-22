@@ -10,12 +10,12 @@
  */
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { readFileSync } from 'node:fs'
+import { appendFileSync, readFileSync } from 'node:fs'
 import { LlmError, complete, llmConfigFromEnv } from '../core/llm.ts'
 import { forgePersona, assertSafePersonaName } from '../core/forge.ts'
 import { buildSystemPrompt, loadPersona } from '../core/persona.ts'
 import { loadDotEnv } from '../core/env.ts'
-import { rootDir, setRoot } from '../core/archive.ts'
+import { dataPath, rootDir, setRoot } from '../core/archive.ts'
 import type { Source } from '../core/types.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -86,6 +86,19 @@ async function callForge(args: Record<string, unknown>): Promise<string> {
   const holdoutRatio = typeof args.sampleHoldout === 'number' && args.sampleHoldout >= 0 && args.sampleHoldout < 1 ? args.sampleHoldout : 0.1
   const redact = args.redact === true
 
+  // A 142-chunk run shows nothing until it ends, so progress goes to a file the
+  // user can tail from another window. Failing to write the log must never
+  // abort the run itself.
+  const progressLog = dataPath(`${persona}.progress.log`)
+  const noteProgress = (message: string): void => {
+    try {
+      appendFileSync(progressLog, message)
+    } catch {
+      // Read-only data directory, or a path that vanished mid-run: ignore.
+    }
+  }
+  noteProgress(`开始 ${new Date().toISOString()}\n源文件 ${file}\n`)
+
   const result = await forgePersona({
     file,
     persona,
@@ -99,8 +112,9 @@ async function callForge(args: Record<string, unknown>): Promise<string> {
     maxChunks: 0,
     ...(sample === undefined ? {} : { sample }),
     config,
-    onProgress: () => {},
+    onProgress: noteProgress,
   })
+  noteProgress(`完成 ${new Date().toISOString()}\n`)
 
   return [
     `已生成人设：${result.personaFile}`,
@@ -108,6 +122,8 @@ async function callForge(args: Record<string, unknown>): Promise<string> {
     `解析 ${result.total} 条（${result.self} / ${result.friend}），训练 ${result.train}，留出 ${result.holdout}`,
     `切成 ${result.chunks} 块，处理 ${result.processed} 块`,
     `覆盖 ${result.chunks - result.failed}/${result.chunks} 块对话`,
+    `累计 ${result.usage.calls} 次模型调用，输入 ${result.usage.promptTokens} / 输出 ${result.usage.completionTokens} token`,
+    `进度日志：${progressLog}`,
     ...(result.sampled ? ['', '注意：这是抽样试跑，写在 persona.sample.md，正式人设没有被覆盖。'] : []),
     ...(result.backups.length > 0 ? ['', `覆盖前的旧文件已备份：${result.backups.join('、')}`] : []),
     '',

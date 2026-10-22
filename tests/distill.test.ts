@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { annotateCatchphrases, buildChunks, consolidateObservations, extractJson, mergeObservations, observeChunks, renderChunk, renderDraft, toObservation, verifySamples } from '../src/core/distill.ts'
 import type { LlmConfig } from '../src/core/llm.ts'
 import type { ChatMessage } from '../src/core/types.ts'
+import { computeStats } from '../src/core/stats.ts'
 
 let counter = 0
 
@@ -221,7 +222,39 @@ test('draft shows how often each catchphrase occurs', () => {
   const merged = mergeObservations([toObservation({ catchphrases: ['行'] })])
   merged.catchphrases = annotateCatchphrases(merged.catchphrases, [message('friend', '行')])
   const draft = renderDraft({ name: '他', styleBlock: '## 风格指纹', merged })
-  assert.match(draft, /`行`\(1\)/)
+  assert.match(draft, /`行`\(他 1\)/)
+})
+
+test('a catchphrase the owner uses too is shown with both counts', () => {
+  // The two sections used to disagree: style.md filtered shared vocabulary out,
+  // persona.md listed it unmarked. Printing both counts hands the judgement to
+  // the reader instead of hiding it.
+  const merged = mergeObservations([toObservation({ catchphrases: ['行'] })])
+  merged.catchphrases = annotateCatchphrases(merged.catchphrases, [
+    message('friend', '行'),
+    message('self', '行'),
+    message('self', '行'),
+  ])
+  assert.equal(merged.catchphrases[0].archiveCount, 1)
+  assert.equal(merged.catchphrases[0].selfCount, 2)
+  assert.match(renderDraft({ name: '他', styleBlock: '## 风格指纹', merged }), /`行`\(他 1 \/ 你 2\)/)
+})
+
+test('a claim about exclamation marks the archive contradicts is flagged', () => {
+  // A ban is the most damaging error: it freezes a real habit out of the persona.
+  const merged = mergeObservations([toObservation({ avoid: [{ behavior: '不用感叹号', evidence: '' }] })])
+  const messages = [message('friend', '太好了！'), message('friend', '真的！'), message('friend', '嗯')]
+  const stats = computeStats(messages)
+  const draft = renderDraft({ name: '他', styleBlock: '## 风格指纹', merged, stats })
+  assert.match(draft, /和统计对不上/)
+  assert.match(draft, /感叹号占 66\.7%/)
+})
+
+test('a claim the archive supports is not flagged', () => {
+  const merged = mergeObservations([toObservation({ avoid: [{ behavior: '不用问号', evidence: '' }] })])
+  const stats = computeStats([message('friend', '嗯'), message('friend', '行吧')])
+  const draft = renderDraft({ name: '他', styleBlock: '## 风格指纹', merged, stats })
+  assert.doesNotMatch(draft, /和统计对不上/)
 })
 
 test('annotateCatchphrases drops grammar words a model mistook for habits', () => {
