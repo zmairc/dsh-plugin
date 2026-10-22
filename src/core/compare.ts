@@ -15,10 +15,23 @@
 
 import type { WireMessage } from './llm.ts'
 
+/**
+ * Messages longer than this are pasted documents, not conversation.
+ *
+ * `stats.ts` already caps the mean at the same threshold: the archive holds a
+ * 12914-character message and a handful of 1000+ ones, and a generated reply
+ * is never that long. Left in, the reference mean swings between 11 and 45
+ * characters depending on which slice the long messages land in, and every
+ * candidate looks equally far from it.
+ */
+const LENGTH_CAP = 1000
+
 /** How one set of messages is shaped. Rates are shares of messages, not of characters. */
 export interface Morphology {
   /** Messages measured, so a small sample is not over-read. */
   count: number
+  /** Messages dropped for exceeding {@link LENGTH_CAP}. */
+  dropped: number
   meanLength: number
   medianLength: number
   /** Share of 1–2 character messages. */
@@ -48,19 +61,22 @@ function rate(texts: readonly string[], pattern: RegExp): number {
  * @returns length and punctuation profile.
  */
 export function profileMorphology(texts: readonly string[]): Morphology {
-  const lengths = texts.map((text) => text.length).sort((a, b) => a - b)
+  const kept = texts.filter((text) => text.length <= LENGTH_CAP)
+  const dropped = texts.length - kept.length
+  const lengths = kept.map((text) => text.length).sort((a, b) => a - b)
   const median = lengths.length === 0 ? 0 : lengths[Math.floor(lengths.length / 2)]
   return {
-    count: texts.length,
+    count: kept.length,
+    dropped,
     meanLength: mean(lengths),
     medianLength: median,
-    shortRate: rate(texts, /^.{1,2}$/su),
-    briefRate: rate(texts, /^.{1,8}$/su),
-    questionRate: rate(texts, /[?？]/),
-    commaRate: rate(texts, /[，,]/),
-    periodRate: rate(texts, /[。]/),
-    exclamationRate: rate(texts, /[!！]/),
-    emojiRate: rate(texts, /\p{Extended_Pictographic}/u),
+    shortRate: rate(kept, /^.{1,2}$/su),
+    briefRate: rate(kept, /^.{1,8}$/su),
+    questionRate: rate(kept, /[?？]/),
+    commaRate: rate(kept, /[，,]/),
+    periodRate: rate(kept, /[。]/),
+    exclamationRate: rate(kept, /[!！]/),
+    emojiRate: rate(kept, /\p{Extended_Pictographic}/u),
   }
 }
 

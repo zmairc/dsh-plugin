@@ -34,6 +34,17 @@ function formatGap(ms: number): string {
   return `（${Math.round(hours / 24)} 天后）`
 }
 
+/**
+ * Flatten a generated reply to one line.
+ *
+ * Both sides must be laid out the same way: one version wrapping itself onto
+ * three lines and the other staying on one is a tell, and the reader would be
+ * guessing at formatting rather than at the voice.
+ */
+function tidy(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
 /** Read `A,B,A…` or `ABAB…` into a list of choices. */
 function parseAnswers(raw: string): string[] {
   return raw.toUpperCase().match(/[AB]/g) ?? []
@@ -110,7 +121,9 @@ export async function runDuel(flags: Flags): Promise<void> {
     for (const side of sides) {
       process.stdout.write(`第 ${number}/${selected.length} 题 · ${side.name} ... `)
       try {
-        texts[side.slot] = await complete(duelConfig, [{ role: 'system', content: side.system }, ...prediction.context])
+        texts[side.slot] = tidy(
+          await complete(duelConfig, [{ role: 'system', content: side.system }, ...prediction.context]),
+        )
         console.log('ok')
       } catch (error) {
         console.log('失败')

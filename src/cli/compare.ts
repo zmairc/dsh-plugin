@@ -99,7 +99,8 @@ export async function runCompare(flags: Flags): Promise<void> {
   const percent = (value: number): string => `${(value * 100).toFixed(1)}%`
 
   console.log(`\n\n留出集：data/${holdoutName}.holdout.jsonl（${holdout.length} 条）`)
-  console.log(`每题两版各一条，成功 ${selected.length - failures}/${selected.length * sides.length} 次调用\n`)
+  console.log(`每题两版各一条，成功 ${selected.length - failures}/${selected.length * sides.length} 次调用`)
+  if (truth.dropped > 0) console.log(`真实样本剔除 ${truth.dropped} 条千字长文（生成的回复不会那么长，留在里面会让两边都显得太短）`)
   console.log(row('指标', ['真实', ...profiles.map((entry) => entry.name)]))
   console.log(row('样本', [String(truth.count), ...profiles.map((entry) => String(entry.profile.count))]))
   console.log(row('平均长度（字）', [truth.meanLength.toFixed(1), ...profiles.map((entry) => entry.profile.meanLength.toFixed(1))]))

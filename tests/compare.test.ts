@@ -35,6 +35,16 @@ test('an empty sample yields zeros instead of NaN', () => {
   assert.equal(profile.exclamationRate, 0)
 })
 
+test('pasted documents are dropped, so one long message cannot swing the mean', () => {
+  // The archive holds a 12914-character message; a generated reply never does.
+  // Left in, it drags the reference mean to twice the real value.
+  const long = '这是一段贴进来的长文'.repeat(200)
+  const profile = profileMorphology(['嗯', '行', long])
+  assert.equal(profile.count, 2)
+  assert.equal(profile.dropped, 1)
+  assert.equal(profile.meanLength, 1)
+})
+
 test('distance is zero for identical profiles and grows with the gap', () => {
   const real = profileMorphology(['嗯', '行', '这是一条比较长的消息，带逗号'])
   const same = profileMorphology(['嗯', '行', '这是一条比较长的消息，带逗号'])
