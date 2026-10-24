@@ -186,6 +186,18 @@ PowerShell 用 `$env:PERSONAFORGE_API_KEY = "sk-..."`。
 | `reveal --persona <name>` | 对盲测答案 |
 | `compare --base <新版> --challenger <旧版> --n 100` | 两版回答同一批留出题，比长度分布、标点、表情与真实消息的差距（不用人工） |
 | `duel --base <新版> --challenger <旧版> --n 20` | 同一段对话、两条匿名回复，问「哪条更像他」；`--answers "A,B,…"` 评分 |
+| `export --persona <name>` | 导出 SillyTavern V2 角色卡，别的客户端可以直接导入 |
+
+**导出给别的客户端用**：
+
+```bash
+node src/cli/index.ts export --persona 老王
+# → data/老王.card.json
+```
+
+生成的是 SillyTavern Character Card V2（14 个字段齐全），SillyTavern、RisuAI、Chub 这类客户端能直接导入。分工：`description` 放说话规矩、行为模式、语言习惯、共同经历和禁区（这是唯一必定注入的自由字段）；`first_mes` 用一条真实原话——模型会照着它学长短和标点；`mes_example` 放真实对话，转成 `<START>` + `{{char}}`/`{{user}}` 格式。
+
+卡片默认写在 `data/` 下（已 gitignore），因为里面有真实原话。想直接给别人，用 `--out` 指定路径。
 
 **怎么判断改版有没有变好**：`eval` 测的是「你能不能看出哪句是 AI 编的」——但人判断时会去找破绽，而真人本来就跳话题，所以它带着偏差。`compare` 换成统计距离（样本可以到 100 条，不用你标），`duel` 换成「哪条更像」的强迫比较（人做相对判断比绝对判断可靠）。两个都跑，结论一致才算数；不一致本身就说明「统计上像」和「读起来像」是两回事。
 

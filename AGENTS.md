@@ -37,7 +37,7 @@ node src/cli/index.ts <命令>
 | QQ 机器人 | ❌ 未做 | — |
 | 记忆检索（FTS5） | ❌ 未做 | — |
 
-测试：`node --test --test-isolation=none "tests/*.test.ts"`（149 项全绿）
+测试：`node --test --test-isolation=none "tests/*.test.ts"`（152 项全绿）
 
 ## 关键约束（容易踩）
 
@@ -75,13 +75,19 @@ node src/cli/index.ts <命令>
 
 ### 先做完的小事
 
-1. **发布 0.1.7**：这批攒了 B2/B4/B7 + `compare`/`duel` + `--recent`/`--as`。
+1. **发布 0.1.7**：这批攒了 B2/B4/B7 + `compare`/`duel` + `--recent`/`--as` + 说话规矩 + 关系层 + 长句平衡 + `export` + 证据校验。
+
+   **用脚本，别手敲**——npm token 几小时就失效，手敲会漏掉重新登录、然后得到一个误导性的 404：
    ```powershell
-   git push
-   npm publish
+   .\scripts\publish.ps1
+   ```
+   脚本依次做：工作树检查 → `git push` → `npm login` → `npm publish` → 查版本 → 打印装插件命令。
+
+2. **装进 DSH**（脚本最后会打印）：
+   ```powershell
    dsh plugin --profile web add @zmairc/persona-forge@0.1.7
    ```
-   `update` 升不上去（见 `docs/pitfalls.md`）。
+   `update` 升不上去（add 写的是精确版本），见 `docs/pitfalls.md`。
 
 ### 已经验证过的，别再重做
 
@@ -119,4 +125,5 @@ node src/cli/index.ts <命令>
 他关心的事：人设要像、功能要能开源给别人用、别往 C 盘乱写文件。
 
 用户给的真实数据比任何推测都可靠。他补充一句真实原话，胜过十条我编的规则。
+
 

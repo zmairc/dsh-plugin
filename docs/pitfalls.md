@@ -28,15 +28,19 @@
 
 ## npm 发布与插件升级
 
-**`npm publish` 报 404 ≠ 包不存在。** npm 用 404 隐藏「你没有权限」：token 失效时同样返回
-`E404 ... The requested resource '@zmairc/persona-forge@<版本>' could not be found or you do not have permission`。
-先 `npm whoami`；报 `ENEEDAUTH`/`401` 就重新登录：
+**每次发布前都要重新登录。** 这台机器上的 npm token 有效期只有几小时，过期后 `publish` **不会**报 401，而是报
 
-```powershell
-npm login --registry=https://registry.npmjs.org/
+```
+E404 ... The requested resource '@zmairc/persona-forge@<版本>' could not be found or you do not have permission
 ```
 
-用户级 `.npmrc` 的默认源是 `registry.npmmirror.com`（只读镜像，登不进去），所以 `--registry` 一定要带。
+npm 用 404 掩盖权限失败，极其容易误判成「包名错了」或「版本号被占了」。2026-10 到 2026-10-24 之间这个坑踩了三次。所以走脚本，不要手敲：
+
+```powershell
+.\scripts\publish.ps1
+```
+
+脚本会：检查工作树干净 → `git push` → `npm login --registry=https://registry.npmjs.org/`（必须带 `--registry`，用户级 `.npmrc` 默认源是只读镜像）→ `npm publish` → 等几秒查版本 → 打印 `dsh plugin add` 命令。
 
 **怎么区分「发布成功但 CDN 没刷出来」和「发布根本没成功」**：
 
