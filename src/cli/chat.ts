@@ -9,10 +9,24 @@
 import { createInterface } from 'node:readline/promises'
 import { complete, llmConfigFromEnv, type WireMessage } from '../core/llm.ts'
 import { buildSystemPrompt, loadPersona } from '../core/persona.ts'
+import { dataPath, readJsonl } from '../core/archive.ts'
+import { computeStats } from '../core/stats.ts'
+import { lengthPlanFromStats, longHint, shouldAskForLong, type LengthPlan } from '../core/reply-length.ts'
+import type { ChatMessage } from '../core/types.ts'
 import { boolFlag, stringFlag, type Flags } from './args.ts'
 
 /** How many recent turns to resend. Older turns drop out rather than grow the prompt. */
 const HISTORY_TURNS = 24
+
+/**
+ * Read the stored length plan for a persona, when its archive is still around.
+ * @param name - persona directory name.
+ * @returns the plan, or undefined when there is no archive to measure.
+ */
+function loadLengthPlan(name: string): LengthPlan | undefined {
+  const archive = readJsonl<ChatMessage>(dataPath(`${name}.jsonl`))
+  return archive.length === 0 ? undefined : lengthPlanFromStats(computeStats(archive))
+}
 
 /**
  * Run the chat command.
@@ -30,6 +44,10 @@ export async function runChat(flags: Flags): Promise<void> {
   const listener = stringFlag(flags, 'as')
   let system = buildSystemPrompt(persona, { disclose, actions, ...(listener === undefined ? {} : { listener }) })
   const config = llmConfigFromEnv()
+  // Length is balanced across the session: short replies stay short, and a
+  // long one is requested when the measured share falls behind.
+  const plan = loadLengthPlan(name)
+  const replyLengths: number[] = []
 
   console.log(`正在和 ${persona.name} 对话（${config.model} @ ${config.baseUrl}）`)
   if (listener !== undefined) console.log(`对方身份：${listener}`)
@@ -68,8 +86,13 @@ export async function runChat(flags: Flags): Promise<void> {
 
     history.push({ role: 'user', content: trimmed })
     try {
-      const reply = await complete(config, [{ role: 'system', content: system }, ...history.slice(-HISTORY_TURNS)])
+      // Ask for a long reply only when long ones are behind their measured
+      // share; a short reply is usually exactly right.
+      const askLong = plan !== undefined && shouldAskForLong(replyLengths, plan)
+      const turnSystem = askLong && plan !== undefined ? `${system}\n\n${longHint(plan.threshold)}` : system
+      const reply = await complete(config, [{ role: 'system', content: turnSystem }, ...history.slice(-HISTORY_TURNS)])
       history.push({ role: 'assistant', content: reply })
+      replyLengths.push(reply.length)
       console.log(`\n${persona.name} > ${reply}\n`)
     } catch (error) {
       // Drop the unanswered turn so the next request is not built on it.

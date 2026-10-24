@@ -15,8 +15,10 @@ import { LlmError, complete, llmConfigFromEnv } from '../core/llm.ts'
 import { forgePersona, assertSafePersonaName } from '../core/forge.ts'
 import { buildSystemPrompt, loadPersona } from '../core/persona.ts'
 import { loadDotEnv } from '../core/env.ts'
-import { dataPath, rootDir, setRoot } from '../core/archive.ts'
-import type { Source } from '../core/types.ts'
+import { dataPath, readJsonl, rootDir, setRoot } from '../core/archive.ts'
+import { computeStats } from '../core/stats.ts'
+import { lengthPlanFromStats, longHint, shouldAskForLong } from '../core/reply-length.ts'
+import type { ChatMessage, Source } from '../core/types.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'persona-forge'
@@ -148,7 +150,7 @@ async function callChat(args: Record<string, unknown>): Promise<string> {
   }
 
   const loaded = loadPersona(persona)
-  const system = buildSystemPrompt(loaded, { disclose: false })
+  let system = buildSystemPrompt(loaded, { disclose: false })
 
   const history = Array.isArray(args.history) ? args.history : []
   const turns = history.flatMap((item) => {
@@ -158,6 +160,16 @@ async function callChat(args: Record<string, unknown>): Promise<string> {
     const content = typeof record.content === 'string' ? record.content : ''
     return role !== null && content.length > 0 ? [{ role, content }] : []
   })
+
+  // Balance reply length over the caller's history. This tool is stateless, so
+  // without a few past turns there is nothing to balance and the persona's own
+  // length rules stand alone.
+  const archive = readJsonl<ChatMessage>(dataPath(`${persona}.jsonl`))
+  if (archive.length > 0) {
+    const plan = lengthPlanFromStats(computeStats(archive))
+    const lengths = turns.filter((turn) => turn.role === 'assistant').map((turn) => turn.content.length)
+    if (shouldAskForLong(lengths, plan)) system += `\n\n${longHint(plan.threshold)}`
+  }
 
   return await complete(config, [
     { role: 'system', content: system },
