@@ -176,3 +176,22 @@ test('the long-sentence anchor appears in the rules when supplied', () => {
   assert.match(rules, /长句就长这样/)
 })
 
+
+test('a fragmentary speaker is never told to write longer', () => {
+  // dennis writes 80% of his messages in 8 characters or fewer. Telling that
+  // persona "不要只会发短句" would break it — the rule must follow the number.
+  const messages = Array.from({ length: 20 }, (_, index) => message('friend', index % 5 === 0 ? '这是一条稍微长一点的消息' : '行'))
+  const rules = renderSpeechRules(computeStats(messages))
+  assert.match(rules, /基本都很短/)
+  assert.doesNotMatch(rules, /不要只会发短句/)
+})
+
+test('the long-sentence anchor never picks a media path', () => {
+  // wuwenzhe's archive produced `media/00233_b729e9de_raw.dat（加密原图）`.
+  const messages = [
+    message('friend', 'media/00233_b729e9de_raw.dat（加密原图）'),
+    message('friend', '不过楼下有别人点的鸡腿，你要是想要，我帮你拿上来'),
+  ]
+  const example = pickLongExample(messages, 24)
+  assert.ok(example === undefined || !example.startsWith('media/'))
+})

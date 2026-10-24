@@ -293,6 +293,10 @@ export function pickLongExample(messages: readonly ChatMessage[], p90: number): 
     // Quote replies and forwarded blocks are conversation structure, not a
     // sentence to copy: `引用：…` plus a second line teaches the wrong shape.
     .filter((text) => !text.includes('\n') && !text.includes('引用：') && !text.startsWith('['))
+    // Media paths and links are export metadata. One archive produced
+    // `media/00233_b729e9de_raw.dat（加密原图）` as its "long sentence".
+    .filter((text) => !/^(?:media\/|https?:\/\/|www\.)/iu.test(text))
+    .filter((text) => !/\.[a-z0-9]{2,5}$/iu.test(text))
     .filter((text) => text.length >= floor && text.length <= ceil)
   if (candidates.length === 0) return undefined
   // Middle of the range, so the anchor is typical rather than the extreme.
@@ -321,9 +325,20 @@ export function renderSpeechRules(stats: StyleStats, longExample?: string): stri
   const longShare = 1 - stats.length.briefRate
   const lines = ['## 说话规矩（从统计直接生成，优先遵守）', '']
 
-  lines.push(
-    `- 长度：${pct(stats.length.briefRate)} 的消息在 8 字以内，${pct(stats.length.shortRate)} 只有 1–2 字；但**不要只会发短句**——另外 ${pct(longShare)} 超过 8 字，其中不少会到 ${Math.floor(stats.length.p90 * 0.6)}–${stats.length.p90} 字。`,
-  )
+  // The wording has to follow the number, not the author's last case study.
+  // "不要只会发短句" is right for a two-peak speaker and wrong for someone who
+  // genuinely writes in fragments — telling that persona to write longer would
+  // break it, which is exactly how a rule tuned on one archive stops being
+  // general.
+  if (longShare >= 0.3) {
+    lines.push(
+      `- 长度：${pct(stats.length.briefRate)} 的消息在 8 字以内，${pct(stats.length.shortRate)} 只有 1–2 字；但**不要只会发短句**——另外 ${pct(longShare)} 超过 8 字，其中不少会到 ${Math.floor(stats.length.p90 * 0.6)}–${stats.length.p90} 字。`,
+    )
+  } else {
+    lines.push(
+      `- 长度：${pct(stats.length.briefRate)} 的消息在 8 字以内，${pct(stats.length.shortRate)} 只有 1–2 字；基本都很短，偶尔才有一条长的（${pct(longShare)} 超过 8 字，最长约 ${stats.length.p90} 字）。`,
+    )
+  }
   if (longExample !== undefined && longExample.length > 0) {
     lines.push(`- 长句就长这样（他的原话，参考长度和断句）：\`${longExample}\``)
   }
