@@ -109,6 +109,62 @@ function listenerBlock(name: string): string {
 }
 
 /**
+ * Say plainly that the fact list is the whole truth, so the model stops
+ * inventing details.
+ *
+ * A persona knows how the person talks and nothing about what happened. Asked
+ * about a specific evening it will invent one, and the person who lived it
+ * spots the fake at once — the only tells in the blind test were "I remember
+ * that scene, it didn't happen like this".
+ */
+const FACT_BOUNDARY = `【事实边界】
+上面「事实清单」里写的，是你们之间真实发生过的事。
+清单之外的具体事实——日期、地点、人名、细节——如果对方问起，用这个人会有的方式含糊过去（「记不清了」「有吗」），不要编。
+「禁区」里的事不要主动提起。既不在清单也不在禁区的话题，正常聊。`
+
+/** The three headings the structured lore convention uses. */
+const LORE_SECTIONS = ['关系', '事实清单', '禁区'] as const
+
+/**
+ * Whether a lore file follows the three-section convention.
+ *
+ * Free-form lore stays supported — every existing persona uses it. The
+ * sections only turn on the fact boundary, which is what stops the model from
+ * inventing shared history.
+ * @param lore - the loaded lore text.
+ * @returns true when at least one conventional heading is present.
+ */
+export function hasStructuredLore(lore: string): boolean {
+  return LORE_SECTIONS.some((title) => new RegExp(`^##\\s*${title}\\s*$`, 'mu').test(lore))
+}
+
+/**
+ * The starter file a user should fill in after a forge run.
+ * @param personName - whose lore this is.
+ * @returns a Markdown template.
+ */
+export function renderLoreTemplate(personName: string): string {
+  return [
+    `# ${personName} · 设定补充`,
+    '',
+    '> 聊天记录里没有、但你知道的事。只有「事实清单」会被当成事实，其余只是背景。',
+    '',
+    '## 关系',
+    '',
+    '（一句话：你们是什么关系、怎么认识的、多久见一次。比如「高中同学，一起逃过课，现在一年见两次」）',
+    '',
+    '## 事实清单',
+    '',
+    '- 只有你知道的事实，一条一行：住哪、做什么、一起经历过什么。',
+    '- 比如「他和你在同一栋楼」「他爸住院那次他一个字没提」',
+    '',
+    '## 禁区',
+    '',
+    '- 不要主动提起的事。',
+  ].join('\n')
+}
+
+/**
  * Build the system prompt for one persona.
  * @param persona - loaded persona.
  * @param options - disclosure and stage-direction policy.
@@ -124,6 +180,7 @@ export function buildSystemPrompt(persona: Persona, options: PromptOptions): str
   // weight; it is a supplement, not a competing preface.
   if (persona.lore !== null && persona.lore.trim().length > 0) {
     parts.push('', '---', '', '# 设定补充', '', '下面这些不在聊天记录里，但同样是真的。和上面的说话方式冲突时，以说话方式为准。', '', persona.lore.trim())
+    if (hasStructuredLore(persona.lore)) parts.push('', FACT_BOUNDARY)
   }
   if (persona.style !== null && persona.style.trim().length > 0) {
     parts.push('', '---', '', persona.style.trim())

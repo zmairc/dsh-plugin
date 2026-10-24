@@ -7,6 +7,8 @@
 
 import { LlmError, llmConfigFromEnv } from '../core/llm.ts'
 import { assertSafePersonaName, forgePersona } from '../core/forge.ts'
+import { renderLoreTemplate } from '../core/persona.ts'
+import { exists, personaPath } from '../core/archive.ts'
 import type { Source } from '../core/types.ts'
 import { boolFlag, listFlag, numberFlag, stringFlag, type Flags } from './args.ts'
 
@@ -97,6 +99,12 @@ export async function runForge(flags: Flags): Promise<void> {
     console.log(`\n注意：只处理了 ${result.processed}/${result.chunks} 块，没覆盖到的对话不会影响统计，但会降低观察的完整度。`)
   }
   console.log('\n这份人设是自动生成的：统计精确，模型读出来的特征需要你核对。')
-  console.log(`下一步：node src/cli/index.ts chat --persona ${result.persona}`)
+  const loreFile = personaPath(result.persona, 'lore.md')
+  if (!exists(loreFile)) {
+    console.log('\n还差一步：写一份 ' + loreFile)
+    console.log('聊天记录只告诉模型「他怎么说话」，没告诉他「你们之间发生过什么」。缺这一层，模型会自己编——而编出来的东西，只有你能一眼看出不对。')
+    console.log('\n' + renderLoreTemplate(result.friend))
+  }
+  console.log(`\n下一步：node src/cli/index.ts chat --persona ${result.persona}`)
   console.log(`盲测：  node src/cli/index.ts eval --persona ${result.persona} --n 10`)
 }
