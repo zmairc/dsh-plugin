@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * persona-forge command line.
  *
@@ -12,6 +12,7 @@ import { runChat } from './chat.ts'
 import { runCompare } from './compare.ts'
 import { runDistill } from './distill.ts'
 import { runDuel } from './duel.ts'
+import { runExport } from './export.ts'
 import { runEval, revealEval } from './eval.ts'
 import { runForge } from './forge.ts'
 import { runIngest, runSpeakers } from './ingest.ts'
@@ -58,6 +59,8 @@ const USAGE = `persona-forge — 从聊天记录蒸馏一个人的说话方式
                                          两版回答同一批留出题，比谁更像真实分布
                                          --n 100           每版生成多少条
                                          --holdout <名字>  留出集从谁那里读（默认 base）
+  export   --persona <名字> [--out 文件.json]
+                                         导出标准角色卡（SillyTavern V2），可以直接导入其他客户端
   duel     --base <新版> --challenger <旧版> [--n 20]
                                          同一段对话、两条匿名回复，问「哪条更像他」
                                          --answers "A,B,…" 评分（20 题里 15 题倾向一边才算显著）
@@ -111,6 +114,9 @@ async function main(argv: string[]): Promise<void> {
     case 'compare':
       await runCompare(flags)
       return
+    case 'export':
+      runExport(flags)
+      return
     case 'duel':
       await runDuel(flags)
       return
@@ -137,3 +143,4 @@ try {
   console.error(error instanceof Error ? error.message : String(error))
   process.exitCode = 1
 }
+
