@@ -28,6 +28,22 @@
 
 ## npm 发布与插件升级
 
+**`.ps1` 脚本必须存成 UTF-8 with BOM。** PowerShell 5.1 按系统 ANSI（中文机器上是 GBK）读无 BOM 的脚本，中文注释乱码之后会把引号和花括号也一起破坏，报出来的错误是
+
+```
+Missing closing '}' in statement block or type definition
+```
+
+指向一行看起来完全正常的 `if ($dirty) {`。用编辑器或 `[System.IO.File]::WriteAllText(path, text, (New-Object System.Text.UTF8Encoding $true))` 存带 BOM 即可。检查手法：
+
+```powershell
+$errors = $null
+[System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path scripts\publish.ps1), [ref]$null, [ref]$errors)
+$errors.Count   # 0 才说明语法没问题
+```
+
+仓库里 `start-chat.ps1` 和 `scripts/publish.ps1` 都有 BOM。
+
 **每次发布前都要重新登录。** 这台机器上的 npm token 有效期只有几小时，过期后 `publish` **不会**报 401，而是报
 
 ```
