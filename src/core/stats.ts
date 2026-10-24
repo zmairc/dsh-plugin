@@ -275,6 +275,31 @@ function pct(value: number): string {
 }
 
 /**
+ * Pick a real message to anchor the "long sentence" rule.
+ *
+ * Numbers alone do not work: told "the longest reaches 24 characters", a model
+ * treats that as a ceiling and stays at ten. One verbatim message of the right
+ * length gives it a shape to copy instead of a limit to stay under.
+ * @param messages - the training archive.
+ * @param p90 - 90th percentile length, as a target zone.
+ * @returns a representative message, or undefined when nothing fits.
+ */
+export function pickLongExample(messages: readonly ChatMessage[], p90: number): string | undefined {
+  const floor = Math.max(10, Math.floor(p90 * 0.7))
+  const ceil = p90 + 20
+  const candidates = messages
+    .filter((message) => message.role === 'friend' && message.kind === 'text')
+    .map((message) => (message.text ?? '').trim())
+    // Quote replies and forwarded blocks are conversation structure, not a
+    // sentence to copy: `引用：…` plus a second line teaches the wrong shape.
+    .filter((text) => !text.includes('\n') && !text.includes('引用：') && !text.startsWith('['))
+    .filter((text) => text.length >= floor && text.length <= ceil)
+  if (candidates.length === 0) return undefined
+  // Middle of the range, so the anchor is typical rather than the extreme.
+  return candidates[Math.floor(candidates.length / 2)]
+}
+
+/**
  * Turn measured length and punctuation habits into explicit rules.
  *
  * This belongs at the top of `persona.md`, not in the style block. The style
@@ -286,9 +311,10 @@ function pct(value: number): string {
  * The length rule deliberately keeps room for long messages: an earlier
  * persona was told "he writes short" and stopped writing anything else.
  * @param stats - measured fingerprint of the archive.
+ * @param longExample - an optional verbatim message used as a length anchor.
  * @returns a Markdown section, or an empty string when nothing was measured.
  */
-export function renderSpeechRules(stats: StyleStats): string {
+export function renderSpeechRules(stats: StyleStats, longExample?: string): string {
   // No friend text at all: nothing was measured, so no rule is honest.
   if (stats.counts.friend === 0) return ''
   const rateOf = (mark: string): number => stats.punctuation.find((entry) => entry.mark === mark)?.rate ?? 0
@@ -296,8 +322,11 @@ export function renderSpeechRules(stats: StyleStats): string {
   const lines = ['## 说话规矩（从统计直接生成，优先遵守）', '']
 
   lines.push(
-    `- 长度：${pct(stats.length.briefRate)} 的消息在 8 字以内，${pct(stats.length.shortRate)} 只有 1–2 字；但**不要只会发短句**——另外 ${pct(longShare)} 超过 8 字，长的能到 ${stats.length.p90} 字左右。`,
+    `- 长度：${pct(stats.length.briefRate)} 的消息在 8 字以内，${pct(stats.length.shortRate)} 只有 1–2 字；但**不要只会发短句**——另外 ${pct(longShare)} 超过 8 字，其中不少会到 ${Math.floor(stats.length.p90 * 0.6)}–${stats.length.p90} 字。`,
   )
+  if (longExample !== undefined && longExample.length > 0) {
+    lines.push(`- 长句就长这样（他的原话，参考长度和断句）：\`${longExample}\``)
+  }
 
   /**
    * State the rate as a habit plus what to do about it.

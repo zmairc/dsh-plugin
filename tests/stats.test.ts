@@ -1,6 +1,6 @@
 ﻿import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeStats, renderSpeechRules, renderStyleBlock } from '../src/core/stats.ts'
+import { computeStats, pickLongExample, renderSpeechRules, renderStyleBlock } from '../src/core/stats.ts'
 import type { ChatMessage } from '../src/core/types.ts'
 
 let counter = 0
@@ -156,4 +156,23 @@ test('speech rules stay silent when nothing was measured', () => {
   assert.equal(renderSpeechRules(computeStats([message('self', '嗯')])), '')
 })
 
+
+
+test('the long-sentence anchor skips quote replies and multi-line blocks', () => {
+  // A `引用：…` block is conversation structure; copying it teaches the wrong shape.
+  const messages = [
+    message('friend', '引用：他说了一句\n我回一句'),
+    message('friend', '不过楼下有别人点的鸡腿，你要是想要，我帮你拿上来。'),
+  ]
+  const example = pickLongExample(messages, 24)
+  assert.ok(example !== undefined)
+  assert.doesNotMatch(example, /引用/)
+})
+
+test('the long-sentence anchor appears in the rules when supplied', () => {
+  const messages = [message('friend', '行'), message('friend', '不过楼下有别人点的鸡腿，你要是想要，我帮你拿上来。')]
+  const stats = computeStats(messages)
+  const rules = renderSpeechRules(stats, pickLongExample(messages, stats.length.p90))
+  assert.match(rules, /长句就长这样/)
+})
 

@@ -9,7 +9,7 @@
 import type { ChatMessage, Source } from './types.ts'
 import { parseTranscript, splitHoldout } from './parse.ts'
 import { redact } from './redact.ts'
-import { computeStats, renderSpeechRules, renderStyleBlock } from './stats.ts'
+import { computeStats, pickLongExample, renderSpeechRules, renderStyleBlock } from './stats.ts'
 import { annotateCatchphrases, buildChunks, consolidateObservations, observeChunks, renderDraft, verifySamples } from './distill.ts'
 import type { LlmConfig, LlmUsage } from './llm.ts'
 import { readUsage, resetUsage } from './llm.ts'
@@ -202,7 +202,7 @@ export async function forgePersona(options: ForgeOptions): Promise<ForgeResult> 
   const stats = computeStats(train)
   const styleBlock = renderStyleBlock(stats, { self: selfDisplay, friend: friendDisplay })
   // Measured habits turned into rules, rendered at the top of the persona.
-  const rules = renderSpeechRules(stats)
+  const rules = renderSpeechRules(stats, pickLongExample(train, stats.length.p90))
   const styleFile = personaPath(options.persona, 'style.md')
   backup(styleFile)
   writeText(styleFile, styleBlock + '\n')
