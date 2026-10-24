@@ -637,6 +637,8 @@ export interface RenderInput {
   merged: MergedObservation
   /** Measured fingerprint, used to flag claims the archive contradicts. */
   stats?: StyleStats
+  /** Rules generated from the statistics; rendered before the measured block. */
+  rules?: string
 }
 
 /** Longest quote shown beside a behavior; longer ones are pasted documents. */
@@ -753,6 +755,14 @@ export function renderDraft(input: RenderInput): string {
     '> **观察部分是模型读出来的**，可能不准，需要你核对。',
     '> **示例是真实原话**，可以直接用。',
     '',
+  )
+  // Rules go before the measured block on purpose: a model reads a long prompt
+  // top-down and drifts back to its own habits, so the enforceable numbers are
+  // stated as instructions first and kept as reference afterwards.
+  if (input.rules !== undefined && input.rules.trim().length > 0) {
+    lines.push(input.rules.trim(), '')
+  }
+  lines.push(
     '## 说话方式（统计）',
     '',
     // The stats renderer emits its own `## 风格指纹` heading; demote it one

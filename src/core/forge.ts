@@ -9,7 +9,7 @@
 import type { ChatMessage, Source } from './types.ts'
 import { parseTranscript, splitHoldout } from './parse.ts'
 import { redact } from './redact.ts'
-import { computeStats, renderStyleBlock } from './stats.ts'
+import { computeStats, renderSpeechRules, renderStyleBlock } from './stats.ts'
 import { annotateCatchphrases, buildChunks, consolidateObservations, observeChunks, renderDraft, verifySamples } from './distill.ts'
 import type { LlmConfig, LlmUsage } from './llm.ts'
 import { readUsage, resetUsage } from './llm.ts'
@@ -201,6 +201,8 @@ export async function forgePersona(options: ForgeOptions): Promise<ForgeResult> 
   // means the person being played, and this block used to also mean the wisher.
   const stats = computeStats(train)
   const styleBlock = renderStyleBlock(stats, { self: selfDisplay, friend: friendDisplay })
+  // Measured habits turned into rules, rendered at the top of the persona.
+  const rules = renderSpeechRules(stats)
   const styleFile = personaPath(options.persona, 'style.md')
   backup(styleFile)
   writeText(styleFile, styleBlock + '\n')
@@ -239,7 +241,7 @@ export async function forgePersona(options: ForgeOptions): Promise<ForgeResult> 
   merged.samples = verifySamples(merged.samples, train)
   merged.catchphrases = annotateCatchphrases(merged.catchphrases, train)
 
-  const draft = renderDraft({ name: friendDisplay, styleBlock, merged, stats })
+  const draft = renderDraft({ name: friendDisplay, styleBlock, merged, stats, rules })
   const personaFile = personaPath(options.persona, 'persona.md')
   // A sampled run is a speed test, not a persona. Writing it over the real file
   // would hand `chat_persona` a thin draft without anyone noticing, so an

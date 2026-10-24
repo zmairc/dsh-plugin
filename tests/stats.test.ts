@@ -1,6 +1,6 @@
-import { test } from 'node:test'
+﻿import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { computeStats, renderStyleBlock } from '../src/core/stats.ts'
+import { computeStats, renderSpeechRules, renderStyleBlock } from '../src/core/stats.ts'
 import type { ChatMessage } from '../src/core/types.ts'
 
 let counter = 0
@@ -138,3 +138,22 @@ test('phrase statistics sample evenly instead of truncating a huge archive', () 
   // 12,500 matching messages; sampling must scale the count back up.
   assert.ok(phrase.count > 10_000, `expected a scaled count, got ${phrase.count}`)
 })
+
+test('speech rules turn measured habits into instructions', () => {
+  // The archive never had a question mark; generations kept adding them
+  // because the style block reads as reference rather than as a rule.
+  const messages = [message('friend', '嗯'), message('friend', '行'), message('friend', '这个作业我写完了，明天交'), message('self', '好')]
+  const rules = renderSpeechRules(computeStats(messages))
+  assert.match(rules, /不用问号/)
+  assert.match(rules, /句尾不加句号/)
+  assert.match(rules, /用来断长句/)
+  // The length rule must keep room for long messages, or the persona freezes
+  // into one-word replies — the mistake this project made twice before.
+  assert.match(rules, /不要只会发短句/)
+})
+
+test('speech rules stay silent when nothing was measured', () => {
+  assert.equal(renderSpeechRules(computeStats([message('self', '嗯')])), '')
+})
+
+

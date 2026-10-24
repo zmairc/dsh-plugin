@@ -274,6 +274,57 @@ function pct(value: number): string {
   return `${scaled >= 10 ? Math.round(scaled) : scaled.toFixed(1)}%`
 }
 
+/**
+ * Turn measured length and punctuation habits into explicit rules.
+ *
+ * This belongs at the top of `persona.md`, not in the style block. The style
+ * block sits near the bottom of a long prompt and reads like reference data,
+ * and a model will quietly keep its own punctuation habits over it — measured
+ * generations used question marks and full stops that the archive never had.
+ * Stated as rules and placed early, the same numbers are followed.
+ *
+ * The length rule deliberately keeps room for long messages: an earlier
+ * persona was told "he writes short" and stopped writing anything else.
+ * @param stats - measured fingerprint of the archive.
+ * @returns a Markdown section, or an empty string when nothing was measured.
+ */
+export function renderSpeechRules(stats: StyleStats): string {
+  // No friend text at all: nothing was measured, so no rule is honest.
+  if (stats.counts.friend === 0) return ''
+  const rateOf = (mark: string): number => stats.punctuation.find((entry) => entry.mark === mark)?.rate ?? 0
+  const longShare = 1 - stats.length.briefRate
+  const lines = ['## 说话规矩（从统计直接生成，优先遵守）', '']
+
+  lines.push(
+    `- 长度：${pct(stats.length.briefRate)} 的消息在 8 字以内，${pct(stats.length.shortRate)} 只有 1–2 字；但**不要只会发短句**——另外 ${pct(longShare)} 超过 8 字，长的能到 ${stats.length.p90} 字左右。`,
+  )
+
+  /**
+   * State the rate as a habit plus what to do about it.
+   *
+   * A bare percentage is reference data and the model reads it as permission:
+   * told "7.8% of messages have a full stop" it kept ending sentences with
+   * one. The band decides the wording, and the hint says what that means in
+   * practice — while never turning a minority habit into a ban.
+   */
+  const punctuationRule = (label: string, mark: string, none: string, hint: string): void => {
+    const rate = rateOf(mark)
+    if (rate < 0.01) {
+      lines.push(`- ${label}：${none}`)
+      return
+    }
+    const level = rate < 0.1 ? '少用' : rate < 0.3 ? '有时用' : '常用'
+    lines.push(`- ${label}：${level}（${pct(rate)} 的消息里有）${hint.length > 0 ? `，${hint}` : ''}。`)
+  }
+
+  punctuationRule('问号', '？', '不用问号。疑问靠「吗 / 呢 / 吧」这样的语气词。', '疑问大多靠语气词，不靠问号')
+  punctuationRule('句号', '。', '句尾不加句号。', '大部分句子结尾什么都不加')
+  punctuationRule('逗号', '，', '几乎不用逗号。', '用来断长句，不要每句都加')
+  punctuationRule('感叹号', '！', '不用感叹号。', '')
+
+  return lines.join('\n')
+}
+
 /** Describe the friend's busiest 3-hour window. */
 function peakWindow(histogram: readonly number[]): string {
   let bestStart = 0
