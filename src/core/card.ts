@@ -129,6 +129,24 @@ export function renderMesExample(text: string): string {
 }
 
 /**
+ * Pick the first thing he said in the sample dialogue.
+ *
+ * The opener is not decoration: SillyTavern's docs say the model picks its
+ * length and punctuation up from the first message, so an empty one throws
+ * away the most influential slot in the card. A real line is the safest filler.
+ * @param samples - the `真实对话` section body.
+ * @returns a short verbatim opening line, or an empty string.
+ */
+export function pickFirstMessage(samples: string): string {
+  for (const raw of samples.split('\n')) {
+    const turn = /^>\s*他[：:]\s*(.*)$/u.exec(raw.trim())
+    const text = turn?.[1]?.trim() ?? ''
+    if (text.length > 0) return text
+  }
+  return ''
+}
+
+/**
  * Build a SillyTavern V2 card from a loaded persona.
  * @param persona - the persona to export.
  * @param options - creator name and extra tags.
@@ -146,19 +164,25 @@ export function buildCharacterCard(
   const catchphrases = sectionText(sections, '口头禅')
   const humor = bulletLines(sectionText(sections, '他的幽默和火气'))
   const samples = sectionText(sections, '真实对话')
-  const loreRelation = persona.lore === null ? '' : sectionText(splitSections(persona.lore).sections, '关系')
-  const loreFacts = persona.lore === null ? '' : sectionText(splitSections(persona.lore).sections, '事实清单')
+  const loreSections = persona.lore === null ? [] : splitSections(persona.lore).sections
+  const loreRelation = sectionText(loreSections, '关系')
+  const loreFacts = sectionText(loreSections, '事实清单')
+  const loreBanned = sectionText(loreSections, '禁区')
 
+  // `description` is the only free-form field that is always injected, so
+  // everything that must hold lives here, in labelled blocks.
   const descriptionParts: string[] = []
-  if (speechRules.length > 0) descriptionParts.push(speechRules)
-  if (traits.length > 0) descriptionParts.push(['**他会怎么做**', ...traits.map((line) => `- ${line}`)].join('\n'))
-  if (avoid.length > 0) descriptionParts.push(['**他从不做的事**', ...avoid.map((line) => `- ${line}`)].join('\n'))
-  if (loreFacts.length > 0) descriptionParts.push(['**你们之间真实发生过的事**', loreFacts].join('\n\n'))
+  if (speechRules.length > 0) descriptionParts.push(['【说话规矩】', speechRules].join('\n'))
+  if (traits.length > 0) descriptionParts.push(['【行为模式】', ...traits.map((line) => `- ${line}`)].join('\n'))
+  if (avoid.length > 0) descriptionParts.push(['【他从不做的事】', ...avoid.map((line) => `- ${line}`)].join('\n'))
+  if (catchphrases.length > 0) descriptionParts.push(['【语言习惯】', catchphrases].join('\n'))
+  if (loreFacts.length > 0) descriptionParts.push(['【共同经历】', loreFacts].join('\n'))
+  if (loreBanned.length > 0) descriptionParts.push(['【禁区】', loreBanned].join('\n'))
 
+  // `personality` is a brief summary by contract; the measured style profile
+  // already lives in the description, so it does not belong here twice.
   const personalityParts: string[] = []
-  if (catchphrases.length > 0) personalityParts.push(`口头禅：${catchphrases}`)
-  if (humor.length > 0) personalityParts.push(...humor)
-  if (persona.style !== null && persona.style.trim().length > 0) personalityParts.push(persona.style.trim())
+  if (humor.length > 0) personalityParts.push(humor.join('\n'))
 
   return {
     spec: 'chara_card_v2',
@@ -168,16 +192,26 @@ export function buildCharacterCard(
       description: descriptionParts.join('\n\n'),
       personality: personalityParts.join('\n\n'),
       scenario: loreRelation.length > 0 ? loreRelation : '',
-      first_mes: '',
+      first_mes: pickFirstMessage(samples),
       mes_example: renderMesExample(samples),
-      creator_notes: '由 persona-forge 从聊天记录蒸馏生成；说话方式来自统计，事实清单需要人工核对。',
+      creator_notes: '由 persona-forge 从聊天记录蒸馏生成；说话方式来自统计，共同经历和禁区需要人工核对。这一栏不会进 prompt。',
       system_prompt: '',
-      post_history_instructions: '',
+      // Opt-in in SillyTavern, but the highest-weight slot when enabled: a
+      // persona's measured language rules belong at the very end.
+      post_history_instructions: speechRules.length > 0 ? `始终遵守上面的语言习惯，尤其是长度和标点。` : '',
       alternate_greetings: [],
       tags: ['persona-forge', 'distilled'],
       creator: options.creator ?? 'persona-forge',
       character_version: options.version ?? '1.0',
-      extensions: {},
+      // Namespaced so another tool's keys survive a round trip (the spec
+      // requires unknown `extensions` keys to be preserved, not dropped).
+      extensions: {
+        persona_forge: {
+          generator: 'persona-forge',
+          version: options.version ?? '1.0',
+          note: '说话规矩来自统计；共同经历与禁区来自 lore.md，需人工核对。',
+        },
+      },
     },
   }
 }

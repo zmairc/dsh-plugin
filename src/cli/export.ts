@@ -38,6 +38,10 @@ export function runExport(flags: Flags): void {
   console.log(`已导出：${out}`)
   console.log('SillyTavern / 兼容 V2 卡片的客户端可以直接导入这个文件。\n')
   for (const [field, summary] of sections) console.log(`  ${field.padEnd(12)} ${summary}`)
-  console.log('\n提示：description 里已经带上「说话规矩」（从统计生成）和「他会怎么做」；')
+  if (card.data.description.length > 1200) {
+    console.log(`\n注意：description 有 ${card.data.description.length} 字。SillyTavern 建议控制在 1000 token 左右，`)
+    console.log('      上下文小的模型（4k–8k）可能吃不消；可以手动删掉「他从不做什么」里没把握的条目。')
+  }
+  console.log('\n提示：first_mes 取自真实原话——模型会从它学长度和标点，不要随手改。')
   console.log('      scenario 来自 lore.md 的「关系」节，没写就留空。')
 }

@@ -95,8 +95,14 @@ test('the card carries speech rules, traits, and sample dialogue', () => {
   assert.match(card.data.description, /不要只会发短句/)
   assert.match(card.data.description, /被问成绩只报数字/)
   assert.match(card.data.description, /不道歉/)
-  assert.match(card.data.personality, /咋/)
+  // Catchphrases belong in the always-injected description, not the brief
+  // personality summary.
+  assert.match(card.data.description, /咋/)
   assert.match(card.data.mes_example, /\{\{char\}\}: 不忙/)
+  // The opener is the most influential slot: the model copies its length and
+  // punctuation from it, so it must be a real line, not empty.
+  assert.equal(card.data.first_mes, '不忙')
+  assert.match(card.data.extensions.persona_forge.generator, /persona-forge/)
   // scenario comes from lore, not from the draft.
   assert.match(card.data.scenario, /同一栋楼/)
 })
