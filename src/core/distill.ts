@@ -265,6 +265,40 @@ function normalizeText(text: string): string {
 }
 
 /**
+ * Drop traits whose supporting quote came out of the wrong person's mouth.
+ *
+ * `verifySamples` fixes this for the example dialogue only. Trait evidence was
+ * never checked, so a model reading a chunk where the two people sound alike
+ * could attach the other person's rant to the persona — one persona shipped
+ * with `被吵醒受气就连发脏话长段宣泄` backed by a quote the friend's roommate
+ * had actually said. The quote is the only verifiable part of a trait, so a
+ * quote that belongs unambiguously to the other speaker is grounds to drop it.
+ *
+ * Evidence the model paraphrased, truncated, or that both people could have
+ * said is kept: dropping on uncertainty would throw away real traits.
+ * @param traits - merged traits or avoid rules, with their evidence.
+ * @param messages - the archive used for distillation.
+ * @returns the traits whose evidence does not belong to the other speaker.
+ */
+export function verifyEvidence<T extends Trait>(
+  traits: readonly T[],
+  messages: readonly ChatMessage[],
+): T[] {
+  const normalize = (text: string): string => normalizeText(text).toLowerCase()
+  const friendTexts = messages.filter((message) => message.role === 'friend').map((message) => normalize(message.text ?? ''))
+  const selfTexts = messages.filter((message) => message.role === 'self').map((message) => normalize(message.text ?? ''))
+
+  return traits.filter((trait) => {
+    const quote = normalize(trait.evidence)
+    // Anything shorter matches by accident in a long archive.
+    if (quote.length < 6) return true
+    const inFriend = friendTexts.some((text) => text.includes(quote))
+    const onlyFromSelf = !inFriend && selfTexts.some((text) => text.includes(quote))
+    return !onlyFromSelf
+  })
+}
+
+/**
  * Correct speaker labels in extracted samples using the archive itself.
  *
  * Models flip self/friend about as often as they get it right, and a sample

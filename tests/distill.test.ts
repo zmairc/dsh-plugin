@@ -1,6 +1,6 @@
-import { test } from 'node:test'
+﻿import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { annotateCatchphrases, buildChunks, consolidateObservations, extractJson, mergeObservations, observeChunks, renderChunk, renderDraft, toObservation, verifySamples } from '../src/core/distill.ts'
+import { annotateCatchphrases, buildChunks, verifyEvidence, consolidateObservations, extractJson, mergeObservations, observeChunks, renderChunk, renderDraft, toObservation, verifySamples } from '../src/core/distill.ts'
 import type { LlmConfig } from '../src/core/llm.ts'
 import type { ChatMessage } from '../src/core/types.ts'
 import { computeStats } from '../src/core/stats.ts'
@@ -455,3 +455,32 @@ test('chunks skipped by the budget count against coverage', async () => {
   assert.equal(merged.failedChunks, 2)
   assert.equal(merged.traits[0].behavior, '只有一块')
 })
+
+test('a trait backed by the other person quote is dropped', () => {
+  // Real bug: one persona shipped 「被吵醒受气就连发脏话长段宣泄」 backed by a
+  // rant the friend's roommate had said. verifySamples fixed the sample
+  // dialogue only; trait evidence was never checked.
+  const messages = [
+    message('self', '我真草他妈，斯比东西，没有自制力，还定这么多闹钟，把我吵醒'),
+    message('friend', '行'),
+  ]
+  const traits = [{ behavior: '被吵醒就连发脏话', evidence: '我真草他妈，斯比东西，没有自制力' }]
+  assert.deepEqual(verifyEvidence(traits, messages), [])
+})
+
+test('a trait backed by his own quote is kept', () => {
+  const messages = [message('self', '在吗'), message('friend', '不忙，咋了')]
+  const traits = [{ behavior: '被问就说咋了', evidence: '不忙，咋了' }]
+  assert.equal(verifyEvidence(traits, messages).length, 1)
+})
+
+test('ambiguous or paraphrased evidence is kept', () => {
+  // Dropping on uncertainty would throw away real traits.
+  const messages = [message('self', '行'), message('friend', '行')]
+  const traits = [
+    { behavior: '不知道', evidence: '行' },
+    { behavior: '概括出来的', evidence: '他习惯用短句' },
+  ]
+  assert.equal(verifyEvidence(traits, messages).length, 2)
+})
+

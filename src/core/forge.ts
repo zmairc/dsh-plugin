@@ -10,7 +10,7 @@ import type { ChatMessage, Source } from './types.ts'
 import { parseTranscript, splitHoldout } from './parse.ts'
 import { redact } from './redact.ts'
 import { computeStats, pickLongExample, renderSpeechRules, renderStyleBlock } from './stats.ts'
-import { annotateCatchphrases, buildChunks, consolidateObservations, observeChunks, renderDraft, verifySamples } from './distill.ts'
+import { annotateCatchphrases, buildChunks, consolidateObservations, observeChunks, renderDraft, verifyEvidence, verifySamples } from './distill.ts'
 import type { LlmConfig, LlmUsage } from './llm.ts'
 import { readUsage, resetUsage } from './llm.ts'
 import { dataPath, exists, personaPath, readText, writeJsonl, writeText } from './archive.ts'
@@ -239,6 +239,10 @@ export async function forgePersona(options: ForgeOptions): Promise<ForgeResult> 
 
   merged = await consolidateObservations(options.config, merged, { onProgress: options.onProgress })
   merged.samples = verifySamples(merged.samples, train)
+  // Trait evidence gets the same speaker check as the samples: a quote that
+  // belongs to the other person means the trait describes the wrong person.
+  merged.traits = verifyEvidence(merged.traits, train)
+  merged.avoid = verifyEvidence(merged.avoid, train)
   merged.catchphrases = annotateCatchphrases(merged.catchphrases, train)
 
   const draft = renderDraft({ name: friendDisplay, styleBlock, merged, stats, rules })
