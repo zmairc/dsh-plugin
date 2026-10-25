@@ -16,7 +16,7 @@ import { complete, type LlmConfig, type WireMessage } from './llm.ts'
 import { extractJson, type Completer } from './distill.ts'
 
 /** Bump when the rubric wording changes; written into every stored profile. */
-export const RUBRIC_VERSION = 1
+export const RUBRIC_VERSION = 2
 
 /** The five dimensions, in a fixed order for tables and reports. */
 export const DIMENSIONS = ['openness', 'conscientiousness', 'extraversion', 'agreeableness', 'neuroticism'] as const
@@ -61,42 +61,73 @@ export interface BigFiveSummary {
 }
 
 /**
- * The rubric: dimension anchors a judge can actually see in chat, score
- * anchors so a lazy judge cannot park everything at 3, and the two biases the
- * project has already paid for elsewhere.
+ * Rubric text shared by both modes (archive chunks and reply segments).
  *
- * Message length, punctuation, and emoji are morphology — measured exactly by
- * `stats.ts` — so inferring personality from them would count the same signal
- * twice and dress it up as a new one. And one outburst is not a 5: extreme
- * scores must recur.
+ * v1 said "score 3 when you can't tell", and the judge read that as a default:
+ * both people came out 2.7–3.1 on every dimension, and dennis — who opens
+ * topics and fires off bursts constantly — scored extraversion 3.0 ±0.0. v2
+ * makes the judge hunt for the diagnostic moments first and treats 3 as the
+ * answer only when a segment truly holds nothing. Two guards stay from v1:
+ * length/punctuation/emoji are morphology measured exactly by `stats.ts`, so
+ * they must not be re-counted as personality, and one outburst is not a 5.
  */
+const DIMENSION_DEFS = `维度定义（只看聊天里能观察到的）：
+- openness 开放性：对新东西的反应——新话题、新玩法、没见过的梗，他是接住、好奇追问，还是敷衍（随便、行吧、不来）
+- conscientiousness 尽责性：答应的事办不办、时间准不准、安排有没有谱
+- extraversion 外向性：互动倾向——话题是谁开的、他主动找人说话还是只接话、连发多条、语气热度
+- agreeableness 宜人性：对方诉苦、求助、起冲突时他怎么回——安慰、迁就、让步，还是讲自己的事、怼回去、不让步
+- neuroticism 神经质：情绪起伏——急、烦、炸、焦虑外露，还是稳得住`
+
+const SCORE_ANCHORS = `分数锚点：
+- 1 = 明显且反复的反面行为
+- 2 = 偏低，能看到倾向
+- 3 = 这段材料里真的找不到相关行为
+- 4 = 偏高，有倾向
+- 5 = 明显且反复出现`
+
+const HUNT_RULE = `打分方法：先把材料里最能看出性格的时刻找出来——对方诉苦时他安慰还是只讲自己的事、答应的事办没办、起冲突时让不让、话题是谁开的、他什么时候急或烦——分数从这些时刻来。大量的日常碎片（确认时间、发文件、催一下）不携带人格信息，不要让它们的数量把分数拉向中间。`
+
+const GUARD_RULES = `- 不要从消息长短、标点、表情数量推断任何维度——那是说话习惯，不是人格。评分只看他怎么回应对方
+- 1 分和 5 分需要反复出现的行为，一次不算；在这份材料里反复出现就算`
+
+/** Mode A (assess): one whole archive chunk per call, evidence required. */
 function rubricSystem(selfName: string, friendName: string): string {
   return `你在给一段真实聊天记录里的「${friendName}」做大五人格评估。记录里「${selfName}」是对方，「${friendName}」是被评的人。
 
-只依据这段记录里「${friendName}」自己说的话和回应方式，给五个维度各打 1–5 分。
+${DIMENSION_DEFS}
 
-维度定义（只看聊天里能观察到的）：
-- openness 开放性：对新东西的反应——新话题、新玩法、没见过的梗，他是接住、好奇追问，还是敷衍（随便、行吧、不来）
-- conscientiousness 尽责性：答应的事办不办、时间准不准、安排有没有谱
-- extraversion 外向性：互动倾向——话题是谁开的、他主动找人说话还是只接话、语气热度
-- agreeableness 宜人性：对方诉苦、求助、起冲突时他怎么回——安慰、迁就、让步，还是讲自己的事、怼回去、不让步
-- neuroticism 神经质：情绪起伏——急、烦、炸、焦虑外露，还是稳得住
+${SCORE_ANCHORS}
 
-分数锚点：
-- 1 = 记录里有明显且反复的反面行为
-- 2 = 偏低，能看到倾向但不重
-- 3 = 看不出，或两边的证据差不多
-- 4 = 偏高，有倾向
-- 5 = 明显且反复出现
+${HUNT_RULE}一段正常对话通常至少有一两个维度能看出倾向，实在没有才给 3。
 
 只输出一个 JSON 对象，不要 markdown 代码块，不要解释：
 {"openness":{"score":1,"evidence":["他说的原话"]},"conscientiousness":{"score":1,"evidence":[]},"extraversion":{"score":1,"evidence":[]},"agreeableness":{"score":1,"evidence":[]},"neuroticism":{"score":1,"evidence":[]}}
 
 要求：
 - evidence 每维最多 3 条，必须逐字摘自「${friendName}」自己的消息，只摘一条消息里的连续片段，不要拼接、不要改写
+- 原话里如有英文双引号，写进 JSON 时换成中文引号（核对时忽略标点差异）
 - 看不出的维度 score 给 3，evidence 留空数组，不要硬凑
-- 不要从消息长短、标点、表情数量推断任何维度——那是说话习惯，不是人格。评分只看他怎么回应对方
-- 1 分和 5 分都需要反复出现的证据，一句不算`
+${GUARD_RULES}`
+}
+
+/** Mode B (compare): numbered reply segments per call, per-segment scores. */
+function segmentRubricSystem(): string {
+  return `你在评估「他」在每一段对话末尾的回复，据此给他做大五人格评分。每段里「对方」是和他聊天的人，最后一行「他回：」是他在这个情境下的回复。
+
+${DIMENSION_DEFS}
+
+${SCORE_ANCHORS}
+
+${HUNT_RULE}一段回复常常只有一个字（行、去、嗯）——那一段给 3 是对的；回复有内容时，他怎么回应就是信号，按锚点打。
+
+只输出一个 JSON 对象，不要 markdown 代码块，不要解释：
+{"scores":[{"n":1,"openness":3,"conscientiousness":3,"extraversion":3,"agreeableness":3,"neuroticism":3}]}
+
+要求：
+- scores 数组必须给每一段的评分，n 是【第 n 段】的段号，从 1 开始一段不落
+- 五个维度各是 1–5 的整数
+- 只输出分数，不要摘证据
+${GUARD_RULES}`
 }
 
 /**
@@ -110,6 +141,19 @@ export function assessPrompt(transcript: string, selfName: string, friendName: s
   return [
     { role: 'system', content: rubricSystem(selfName, friendName) },
     { role: 'user', content: transcript },
+  ]
+}
+
+/**
+ * Build one assessment call over numbered reply segments (see {@link renderReplyItems}).
+ * @param transcript - the rendered segments, each numbered 【第 n 段】.
+ * @param segmentCount - how many segments the transcript holds.
+ * @returns the wire messages for one call.
+ */
+export function segmentPrompt(transcript: string, segmentCount: number): WireMessage[] {
+  return [
+    { role: 'system', content: segmentRubricSystem() },
+    { role: 'user', content: `${transcript}\n\n共 ${segmentCount} 段，从第 1 段评到第 ${segmentCount} 段。` },
   ]
 }
 
@@ -170,6 +214,42 @@ function clampScore(value: unknown): number | undefined {
   const score = typeof value === 'string' ? Number(value) : value
   if (typeof score !== 'number' || !Number.isFinite(score)) return undefined
   return Math.min(5, Math.max(1, Math.round(score)))
+}
+
+/**
+ * Parse a per-segment judge reply into one observation per segment.
+ *
+ * Each entry anchors itself with `n` (the segment number printed in the
+ * transcript), so a dropped entry cannot silently shift the ones after it.
+ * Anything less than every segment scored is a malformed reply: the caller
+ * retries rather than averaging over an unaligned subset.
+ * @param value - whatever `JSON.parse` produced.
+ * @param expectedSegments - how many segments the call was given.
+ * @returns one observation per segment, in segment order.
+ */
+export function toBigFiveBatch(value: unknown, expectedSegments: number): BigFiveObservation[] {
+  const observations: BigFiveObservation[] = Array.from({ length: expectedSegments }, () => ({ scores: {}, evidence: {} }))
+  let scored = 0
+  if (typeof value === 'object' && value !== null && Array.isArray((value as Record<string, unknown>).scores)) {
+    for (const item of (value as Record<string, unknown>).scores as unknown[]) {
+      if (typeof item !== 'object' || item === null) continue
+      const record = item as Record<string, unknown>
+      const n = Math.round(Number(record.n))
+      if (!Number.isInteger(n) || n < 1 || n > expectedSegments) continue
+      const observation = observations[n - 1]
+      let any = false
+      for (const dimension of DIMENSIONS) {
+        const score = clampScore(record[dimension])
+        if (score !== undefined) {
+          observation.scores[dimension] = score
+          any = true
+        }
+      }
+      if (any) scored += 1
+    }
+  }
+  if (scored < expectedSegments) throw new Error(`段评分不完整：${scored}/${expectedSegments}`)
+  return observations
 }
 
 /** Normalize a quote for matching: whitespace and punctuation are not the signal. */
@@ -353,10 +433,42 @@ export function renderBigFiveReport(name: string, summary: BigFiveSummary, corpu
   return `${lines.join('\n')}\n`
 }
 
+/** One model call per transcript, one retry when the reply will not parse. */
+async function runWithRetry<T>(
+  config: LlmConfig,
+  transcripts: readonly string[],
+  call: (send: Completer, transcript: string, index: number) => Promise<T>,
+  options: { onProgress?: (message: string) => void; complete?: Completer } = {},
+): Promise<{ results: T[]; failed: number }> {
+  const results: T[] = []
+  let failed = 0
+  for (let index = 0; index < transcripts.length; index += 1) {
+    options.onProgress?.(`评估第 ${index + 1}/${transcripts.length} 段... `)
+    // Malformed JSON or an incomplete batch is worth one retry; a fallback
+    // parse would guess at data.
+    let done = false
+    for (let attempt = 0; attempt < 2 && !done; attempt += 1) {
+      try {
+        results.push(await call(options.complete ?? complete, transcripts[index], index))
+        done = true
+        options.onProgress?.(attempt > 0 ? 'ok（重试成功）\n' : 'ok\n')
+      } catch (error) {
+        if (attempt === 0) {
+          options.onProgress?.('JSON 有问题，重试... ')
+        } else {
+          failed += 1
+          options.onProgress?.(`失败：${error instanceof Error ? error.message : String(error)}\n`)
+        }
+      }
+    }
+  }
+  return { results, failed }
+}
+
 /**
- * Run the judge over every transcript and collect observations.
+ * Run the judge over whole-archive chunks (mode A: evidence included).
  * @param config - endpoint settings; the caller pins temperature to 0.
- * @param transcripts - one rendered transcript per chunk or batch.
+ * @param transcripts - one rendered transcript per chunk.
  * @param selfName - how the archive owner is labeled.
  * @param friendName - how the assessed person is labeled.
  * @param options - progress reporting and an injectable call for tests.
@@ -369,28 +481,37 @@ export async function assessTranscripts(
   friendName: string,
   options: { onProgress?: (message: string) => void; complete?: Completer } = {},
 ): Promise<{ observations: BigFiveObservation[]; failed: number }> {
-  const call = options.complete ?? complete
-  const observations: BigFiveObservation[] = []
-  let failed = 0
-  for (let index = 0; index < transcripts.length; index += 1) {
-    options.onProgress?.(`评估第 ${index + 1}/${transcripts.length} 段... `)
-    // Malformed JSON is worth one retry; a fallback parse would guess at data.
-    let parsed = false
-    for (let attempt = 0; attempt < 2 && !parsed; attempt += 1) {
-      try {
-        const reply = await call(config, assessPrompt(transcripts[index], selfName, friendName))
-        observations.push(toBigFive(extractJson(reply)))
-        parsed = true
-        options.onProgress?.(attempt > 0 ? 'ok（重试成功）\n' : 'ok\n')
-      } catch (error) {
-        if (attempt === 0) {
-          options.onProgress?.('JSON 有问题，重试... ')
-        } else {
-          failed += 1
-          options.onProgress?.(`失败：${error instanceof Error ? error.message : String(error)}\n`)
-        }
-      }
-    }
-  }
-  return { observations, failed }
+  const { results, failed } = await runWithRetry(
+    config,
+    transcripts,
+    async (send, transcript) => toBigFive(extractJson(await send(config, assessPrompt(transcript, selfName, friendName)))),
+    options,
+  )
+  return { observations: results, failed }
+}
+
+/**
+ * Run the judge over numbered reply segments (mode B: per-segment scores,
+ * no evidence). Compare uses this so a 50-item run aggregates 50 samples per
+ * side instead of one integer per 20-item batch.
+ * @param config - endpoint settings; the caller pins temperature to 0.
+ * @param transcripts - one rendered multi-segment transcript per batch.
+ * @param expectedSegments - how many segments each transcript holds, aligned by index.
+ * @param options - progress reporting and an injectable call for tests.
+ * @returns observations flattened across batches, plus failed batch count.
+ */
+export async function assessSegments(
+  config: LlmConfig,
+  transcripts: readonly string[],
+  expectedSegments: readonly number[],
+  options: { onProgress?: (message: string) => void; complete?: Completer } = {},
+): Promise<{ observations: BigFiveObservation[]; failed: number }> {
+  const { results, failed } = await runWithRetry(
+    config,
+    transcripts,
+    async (send, transcript, index) =>
+      toBigFiveBatch(extractJson(await send(config, segmentPrompt(transcript, expectedSegments[index]))), expectedSegments[index]),
+    options,
+  )
+  return { observations: results.flat(), failed }
 }

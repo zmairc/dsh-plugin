@@ -31,7 +31,7 @@ node src/cli/index.ts <命令>
 | 一键流水线 `forge` | ✅ 代码完成：txt → persona.md，支持任意规模 + 抽样控成本 | `src/core/forge.ts` |
 | 盲测 `eval` | ⚠️ 两轮修正后改成混排判断题（10 真 + 10 假），**需重跑才算数** | `src/cli/eval.ts` |
 | 两版对比 `compare` / `duel` | ✅ 新增（2026-10-22）：`compare` 比统计分布（零标注），`duel` 做成对比较（题源逻辑抽到 `core/evalkit.ts`） | `src/cli/compare.ts`、`src/cli/duel.ts`、`src/core/evalkit.ts`、`src/core/compare.ts` |
-| 大五人格评估 `assess` | ✅ 新增（2026-10-25）：固定量表温度 0 逐块打分 + 证据核验，`compare` 末尾加人格距离 | `src/core/bigfive.ts`、`src/cli/assess.ts` |
+| 大五人格评估 `assess` | ✅ v2（2026-10-25）：先找诊断时刻再打分（v1 全挤在 3 附近、分不出两个人）；compare 逐段打分（每边 50 个样本，v1 是 3 个整数） | `src/core/bigfive.ts`、`src/cli/assess.ts` |
 | MCP server | ✅ 可用，已挂进 DSH（两个工具：`forge_persona` / `chat_persona`） | `src/mcp/server.ts` |
 | 启动器 | ✅ 可用 | `启动对话.cmd` |
 | 微信/QQ/抖音 导入器 | ❌ 未做，靠手动粘贴 | — |
@@ -105,9 +105,11 @@ node src/cli/index.ts <命令>
 
 1. **`assess` 命令** ✅ 固定中文量表（rubricVersion=1）逐块打大五分（1–5）+ 逐字证据，温度 0，证据按归档核验（对不上的剔除并计数）。产物：`personas/<name>/bigfive.md`（人读，含分档解读和「聊天记录里的他 ≠ 全面测评」caveat）+ `data/<name>.bigfive.json`（机器读，带 model/date/每块分数）。`--sample N` 用 `sampleEvenly` 控成本，`--dry-run` 离线可用。`src/core/bigfive.ts`、`src/cli/assess.ts`。
 2. **`compare` 人格距离** ✅ 统计距离保留，末尾并列人格距离：真实回复和两版生成回复按「上下文 + 回复」成对评估（孤句没有人格信号），每 20 题一批、温度 0，同量表。两项指标指向不同版本时明确说「一个形状像、一个性格像」。`src/cli/compare.ts`。
-3. **防偏差设计**（量表里写死）：不许从长短/标点/表情推人格（morphology 已量过，双计数）；1 分和 5 分要反复出现的证据；看不出给 3 分留空证据。测试 152 → 163 项。
+3. **防偏差设计**（量表里写死）：不许从长短/标点/表情推人格（morphology 已量过，双计数）；1 分和 5 分要反复出现的证据；看不出给 3 分留空证据。测试 152 → 167 项。
 
-**还没做的验证**（真调用要在用户 PowerShell 跑）：`assess --persona zhaoming`（用户本人即 ground truth）→ `assess --persona dennis`（对方诉苦时两人反应相反，宜人性应有方向性差异，这是现成交叉验证）→ 重跑一次看 ±std 稳定性 → `compare --base zhaoming --challenger zhaoming.manual` 看两个距离是否同向。
+**v1 实测与 v2 修正**（细节在 `docs/decisions.md`）：v1 机制全通（141/142 块、证据核验 99/100），但两个人画像几乎一样（全在 2.7–3.1，最大差 0.2）——「看不出给 3」被当默认档，裁判压向中间。**用户裁决：zhaoming 的全中画像像他本人**，所以 v2 的验收线是「dennis 拉开、zhaoming 不动」。v2：先找诊断时刻再打分；compare 改逐段打分（`toBigFiveBatch` 按段号锚定，缺段整批重试），每边样本 3 → 50，成本不变。
+
+**还没做的验证**（真调用在用户 PowerShell 跑，注意 v2 后要重跑 assess 覆盖 v1 的 JSON）：`assess --persona dennis`（外向性应离开 3.0±0.0）→ `assess --persona zhaoming`（画像应基本不动）→ `compare --base zhaoming --challenger zhaoming.manual` 看人格距离是否稳定。
 
 ### 明确不做
 

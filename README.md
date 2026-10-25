@@ -256,7 +256,7 @@ personas/<name>/
 data/
   ├── <name>.jsonl       # 归一化后的消息
   ├── <name>.holdout.jsonl
-  └── <name>.bigfive.json  # assess 的机器版分数，compare 拿来算人格距离
+  └── <name>.bigfive.json  # assess 的机器版分数（带量表版本号，供存档与复算）
 ```
 
 `data/` 不入库。原始记录任何情况下不上传、不外发。

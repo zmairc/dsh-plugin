@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   aggregateBigFive,
+  assessSegments,
   assessTranscripts,
   countUnverified,
   meanScores,
@@ -10,6 +11,7 @@ import {
   renderReplyItems,
   sumUnverified,
   toBigFive,
+  toBigFiveBatch,
   verifyBigFiveEvidence,
 } from '../src/core/bigfive.ts'
 import type { LlmConfig } from '../src/core/llm.ts'
@@ -172,4 +174,52 @@ test('assessTranscripts retries malformed JSON once and counts hard failures', a
   })
   assert.equal(observations.length, 2)
   assert.equal(failed, 1)
+})
+
+/** A per-segment judge reply covering every segment of a two-segment batch. */
+function batchReply(): unknown {
+  return {
+    scores: [
+      { n: 1, openness: 4, conscientiousness: 2, extraversion: 3, agreeableness: 2, neuroticism: 3 },
+      { n: 2, openness: 2, conscientiousness: 4, extraversion: 5, agreeableness: 4, neuroticism: 1 },
+    ],
+  }
+}
+
+test('toBigFiveBatch maps anchored entries to their segments', () => {
+  const observations = toBigFiveBatch(batchReply(), 2)
+  assert.equal(observations.length, 2)
+  assert.equal(observations[0].scores.openness, 4)
+  assert.equal(observations[1].scores.extraversion, 5)
+  // Segment mode carries no evidence.
+  assert.equal(observations[0].evidence.openness, undefined)
+})
+
+test('toBigFiveBatch coerces string numbers, skips bad anchors, and clamps scores', () => {
+  const observations = toBigFiveBatch(
+    { scores: [{ n: '1', openness: '4' }, { n: 9, agreeableness: 5 }, { n: 2, neuroticism: 0 }, '垃圾'] },
+    2,
+  )
+  assert.equal(observations[0].scores.openness, 4)
+  assert.equal(observations[1].scores.neuroticism, 1)
+  // The n:9 entry is dropped by its anchor, not merged into a real segment.
+  assert.equal(observations[1].scores.agreeableness, undefined)
+})
+
+test('toBigFiveBatch refuses an incomplete batch so the caller retries', () => {
+  const partial = { scores: [{ n: 1, openness: 3, conscientiousness: 3, extraversion: 3, agreeableness: 3, neuroticism: 3 }] }
+  assert.throws(() => toBigFiveBatch(partial, 2), /段评分不完整：1\/2/)
+  assert.throws(() => toBigFiveBatch({ scores: [] }, 1))
+})
+
+test('assessSegments flattens per-segment observations across batches', async () => {
+  let call = 0
+  const { observations, failed } = await assessSegments(config, ['第一批', '第二批'], [2, 2], {
+    complete: async () => (call++ === 0 ? JSON.stringify(batchReply()) : '{坏了'),
+  })
+  // The broken second batch retried once, then counted as failed — but its
+  // fallback still returned nothing, so only the first batch's segments count.
+  assert.equal(failed, 1)
+  assert.equal(observations.length, 2)
+  assert.equal(observations[1].scores.extraversion, 5)
 })

@@ -14,15 +14,13 @@ import { buildPredictions, findLeaked, selectSpread } from '../core/evalkit.ts'
 import { distance, profileMorphology } from '../core/compare.ts'
 import {
   aggregateBigFive,
-  assessTranscripts,
-  countUnverified,
+  assessSegments,
   DIMENSIONS,
   DIMENSION_LABELS,
   meanScores,
   personalityDistance,
   renderReplyItems,
   sumUnverified,
-  verifyBigFiveEvidence,
   type BigFiveSummary,
   type Dimension,
 } from '../core/bigfive.ts'
@@ -140,7 +138,10 @@ export async function runCompare(flags: Flags): Promise<void> {
   // Personality pass: the same Big Five rubric over (context, reply) pairs.
   // An isolated one-word reply carries no personality; the same word after the
   // friend's complaint does, so the judge sees every reply in its situation.
-  // The judge must be deterministic — reproducibility is the point of the metric.
+  // v1 scored one integer per 20-reply batch, so each side aggregated three
+  // integers and the distance differed by exactly one batch — noise. v2 scores
+  // every segment separately: same call cost, N samples per side instead of
+  // three. The judge must be deterministic; reproducibility is the point.
   const assessConfig = { ...config, temperature: 0 }
   const assessBatchSize = 20
   let assessCalls = 0
@@ -153,23 +154,14 @@ export async function runCompare(flags: Flags): Promise<void> {
     for (let index = 0; index < items.length; index += assessBatchSize) batches.push(items.slice(index, index + assessBatchSize))
     const transcripts = batches.map((batch) => renderReplyItems(batch))
     assessCalls += transcripts.length
-    process.stdout.write(`\n人格评估（${label}，${transcripts.length} 批，温度 0）... `)
-    const { observations, failed } = await assessTranscripts(assessConfig, transcripts, '对方', '他', {})
+    process.stdout.write(`\n人格评估（${label}，${items.length} 段 / ${transcripts.length} 批，逐段打分，温度 0）... `)
+    const { observations, failed } = await assessSegments(assessConfig, transcripts, batches.map((batch) => batch.length), {})
     if (observations.length === 0) {
       console.log(`失败（${failed} 批都没解析出结果）`)
       return null
     }
-    // Generated replies are novel text, so quotes are checked against what the
-    // judge was actually shown, not against the archive.
-    const shown = [transcripts.join('\n')]
-    const dropped: Array<Record<Dimension, number>> = []
-    const verified = observations.map((observation) => {
-      const after = verifyBigFiveEvidence(observation, shown)
-      dropped.push(countUnverified(observation, after))
-      return after
-    })
-    console.log(`ok（${observations.length}/${transcripts.length} 批）`)
-    return aggregateBigFive(verified, sumUnverified(dropped), failed)
+    console.log(`ok（${observations.length} 段评分${failed > 0 ? `，${failed} 批失败` : ''}）`)
+    return aggregateBigFive(observations, sumUnverified([]), failed)
   }
 
   const truthBigFive = await assessSide(
