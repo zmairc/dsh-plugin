@@ -19,8 +19,13 @@ personas/*/persona.md
 personas/*/lore.md
 personas/*/style.md
 personas/*/persona.draft.md
+# 大五评估报告：证据是逐字原话，和 persona.md 同级敏感（漏过一次）
+personas/*/bigfive.md
 # 备份副本：forge 现在会把 transcript.txt 也存成 .prev.txt，
 # 只挡 .prev.md 的话真实聊天记录会漏进仓库（踩过一次）
 personas/*/*.prev.*
 personas/*/persona.draft.hand.md
 package-lock.json
+
+# ── 别的智能体工具的私有目录，不是项目产物 ──
+.zcode/

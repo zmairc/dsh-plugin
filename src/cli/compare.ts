@@ -1,4 +1,4 @@
-/**
+﻿/**
  * `compare`: which persona is shaped more like the real messages?
  *
  * Both personas answer the same held-out contexts, and the result is compared
@@ -12,6 +12,8 @@ import { buildSystemPrompt, loadPersona } from '../core/persona.ts'
 import { dataPath, readJsonl } from '../core/archive.ts'
 import { buildPredictions, findLeaked, selectSpread } from '../core/evalkit.ts'
 import { distance, profileMorphology } from '../core/compare.ts'
+import { computeStats } from '../core/stats.ts'
+import { lengthPlanFromStats, longHint, longSlots } from '../core/reply-length.ts'
 import {
   aggregateBigFive,
   assessSegments,
@@ -27,7 +29,7 @@ import {
 import type { ChatMessage } from '../core/types.ts'
 import { numberFlag, stringFlag, type Flags } from './args.ts'
 
-/** Display width, so a Chinese label and an ASCII label line up. */
+/**\n * Smallest personality gap worth reporting.\n *\n * Fifty items on a 1–5 integer scale give a standard error near 0.1 per side.\n * A gap under this floor is measurement noise, not a difference between two\n * personas, and printing it as a verdict would manufacture a conclusion.\n */\nconst PERSONALITY_NOISE_FLOOR = 0.05\n\n/** Display width, so a Chinese label and an ASCII label line up. */
 function width(text: string): number {
   let total = 0
   for (const character of text) total += /[\u4e00-\u9fff\uff00-\uffef]/.test(character) ? 2 : 1
@@ -86,6 +88,18 @@ export async function runCompare(flags: Flags): Promise<void> {
   if (selected.length < requested) console.log(`只能选出 ${selected.length} 道互不重叠的题，本次每边 ${selected.length} 条。`)
 
   const compareConfig = { ...config, temperature: Number(process.env.PERSONAFORGE_EVAL_TEMPERATURE ?? '0.7') }
+
+  // Length has to be balanced here too: `chat` spreads long replies across a
+  // conversation, but this command generates one reply per item and would
+  // otherwise measure a behaviour the user never sees — 6.8 characters against
+  // a real 10.6. Long replies are spread evenly over the sample instead.
+  const archive = readJsonl<ChatMessage>(dataPath(`${holdoutName}.jsonl`))
+  const plan = archive.length === 0 ? undefined : lengthPlanFromStats(computeStats(archive))
+  const slots = plan === undefined ? new Set<number>() : longSlots(selected.length, plan.longShare)
+  if (plan !== undefined && slots.size > 0) {
+    console.log(`按真实比例（${(plan.longShare * 100).toFixed(0)}% 是长句）均匀挑 ${slots.size} 道题要求长回复。`)
+  }
+
   // Index-aligned replies: a failed call leaves null, and every reply stays
   // attached to its prediction for the personality pass below.
   const replies: Array<Array<string | null>> = sides.map(() => selected.map(() => null))
@@ -95,7 +109,8 @@ export async function runCompare(flags: Flags): Promise<void> {
     for (const [sideIndex, side] of sides.entries()) {
       process.stdout.write(`第 ${offset + 1}/${selected.length} 题 · ${side.name} ... `)
       try {
-        const text = await complete(compareConfig, [{ role: 'system', content: side.system }, ...prediction.context])
+        const system = plan !== undefined && slots.has(offset) ? `${side.system}\n\n${longHint(plan.threshold)}` : side.system
+        const text = await complete(compareConfig, [{ role: 'system', content: system }, ...prediction.context])
         replies[sideIndex][offset] = text
         console.log('ok')
       } catch (error) {
@@ -208,11 +223,30 @@ export async function runCompare(flags: Flags): Promise<void> {
 
   const [winner, runnerUp] = scored
   if (runnerUp === undefined) return
+
   const personalityWinner = personalityScored.length === 2
     ? personalityScored.reduce((best, entry) => (entry.distance < best.distance ? entry : best))
     : undefined
-  if (personalityWinner === undefined) {
-    console.log(`\n结论：${winner.name} 更接近真实分布（统计距离 ${winner.distance.toFixed(3)}；人格距离本轮没测成）。`)
+  const personalityGap = personalityScored.length === 2
+    ? Math.abs(personalityScored[0].distance - personalityScored[1].distance)
+    : undefined
+  // A gap smaller than the measurement error is not a difference. Each side is
+  // scored from 50 items on a 1–5 integer scale, which puts the standard error
+  // of the mean near 0.1; reporting a 0.004 gap as a verdict would invent a
+  // conclusion out of noise.
+  const personalityDecisive = personalityGap !== undefined && personalityGap >= PERSONALITY_NOISE_FLOOR
+  if (personalityGap !== undefined && !personalityDecisive) {
+    console.log(
+      `\n人格距离差 ${personalityGap.toFixed(3)} 低于噪声门槛 ${PERSONALITY_NOISE_FLOOR}：` +
+        `50 段 1–5 整数分的均值标准误约 0.1，这一项分不出差别，不要据此下结论。`,
+    )
+  }
+
+  if (personalityWinner === undefined || !personalityDecisive) {
+    console.log(
+      `\n结论：统计上 ${winner.name} 更接近（${winner.distance.toFixed(3)} vs ${runnerUp.distance.toFixed(3)}）；` +
+        (personalityWinner === undefined ? '人格距离本轮没测成。' : '人格一项分不出。'),
+    )
   } else if (personalityWinner.name === winner.name) {
     const other = personalityScored.find((entry) => entry.name !== personalityWinner.name) as { name: string; distance: number }
     console.log(

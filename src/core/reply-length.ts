@@ -76,3 +76,24 @@ export function longHint(threshold: number): string {
   return `【这一句说完整】
 你刚才连着几条都太短了。这一条一口气说完，像平时在微信里那样一整句：${threshold} 个字以上，中间可以停顿，可以有逗号。不要分成几条，也不要说完就收。`
 }
+
+/**
+ * Which items in a batch should ask for a long reply.
+ *
+ * `compare` generates one reply per item and has no conversation to balance
+ * over, so the per-turn check above cannot run there. Long replies are spread
+ * evenly across the sample instead: 50 items at a 44% share means 22 of them
+ * ask for length, spaced out rather than bunched at the start.
+ * @param total - how many items will be generated.
+ * @param longShare - measured share of long messages in the archive.
+ * @returns the zero-based indexes that should ask for a long reply.
+ */
+export function longSlots(total: number, longShare: number): Set<number> {
+  const slots = new Set<number>()
+  if (total <= 0) return slots
+  const wanted = Math.round(total * Math.max(0, Math.min(1, longShare)))
+  for (let index = 0; index < wanted; index += 1) {
+    slots.add(Math.min(total - 1, Math.floor((index * total) / wanted)))
+  }
+  return slots
+}

@@ -1,6 +1,6 @@
 ﻿import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { lengthPlanFromStats, longHint, shouldAskForLong, type LengthPlan } from '../src/core/reply-length.ts'
+import { lengthPlanFromStats, longHint, longSlots, shouldAskForLong, type LengthPlan } from '../src/core/reply-length.ts'
 import { computeStats } from '../src/core/stats.ts'
 import type { ChatMessage } from '../src/core/types.ts'
 
@@ -67,5 +67,20 @@ test('the nudge states a length and allows a comma', () => {
   const hint = longHint(14)
   assert.match(hint, /14 个字以上/)
   assert.match(hint, /逗号/)
+})
+
+
+test('long slots are spread evenly, not bunched at the start', () => {
+  // 50 items at a 44% share: 22 items ask for length, spaced out.
+  const slots = longSlots(50, 0.44)
+  assert.equal(slots.size, 22)
+  const list = [...slots].sort((a, b) => a - b)
+  assert.equal(list[0], 0)
+  for (let index = 1; index < list.length; index += 1) {
+    assert.ok(list[index] - list[index - 1] <= 4, `间隔过大：${list[index - 1]} → ${list[index]}`)
+  }
+  assert.equal(longSlots(10, 0).size, 0)
+  assert.equal(longSlots(10, 1).size, 10)
+  assert.equal(longSlots(0, 0.5).size, 0)
 })
 
