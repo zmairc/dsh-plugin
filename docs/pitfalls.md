@@ -2,6 +2,31 @@
 
 这里是必须记住的坑：每条都真实发生过，症状和排查路径都写下来了。新会话不需要从头读，遇到相关问题再查。
 
+## 生成产物默认都是敏感的
+
+**症状**：跑完 `assess` 后 `git add -A`，把 `personas/*/bigfive.md` 提交了。那里面每个维度的「证据」都是逐字原话（`我一开始不管他`、`如何破局之`、`可能纯靠建模吧`），和 `persona.md` 完全同级敏感。
+
+**当时还没 push**，用 `git reset --soft HEAD~1` 撤回、补 `.gitignore`、重新提交，历史里就没有了。如果已经推送，就得改写远端历史——代价大一两个数量级。
+
+**规则**：`personas/` 下凡是「从真实记录生成、含原话」的文件，一律 gitignore。当前清单：
+
+```
+persona.md  lore.md  style.md  persona.draft.md  bigfive.md
+*.prev.*    transcript.txt     persona.draft.hand.md
+```
+
+**加任何新产物之前先想一句**：它会不会引用原文？会，就先进 `.gitignore`。
+
+**自查**（应该输出为空）：
+
+```powershell
+git ls-files personas/
+```
+
+已经有文件被跟踪时：先加 `.gitignore` → `git rm --cached <文件>` → 提交。别等 push。
+
+**顺带的**：别的 agent 工具会留私有目录（`.zcode/` 之类），不是项目产物，也进 `.gitignore`。`git add -A` 会把它们一起吞进去。
+
 ## 特征证据的说话人：每个环节都要查
 
 **症状**：赵明的人设里有一条
