@@ -331,8 +331,14 @@ export function renderSpeechRules(stats: StyleStats, longExample?: string): stri
   // break it, which is exactly how a rule tuned on one archive stops being
   // general.
   if (longShare >= 0.3) {
+    // Lead with the two modes, not with the short share. Opening on
+    // "56% within 8 characters" taught the model that he is a short writer, and
+    // the long replies stopped appearing: a nudge asking for length afterwards
+    // barely moved it (6.8 → 6.3 characters against a real 10.6).
     lines.push(
-      `- 长度：${pct(stats.length.briefRate)} 的消息在 8 字以内，${pct(stats.length.shortRate)} 只有 1–2 字；但**不要只会发短句**——另外 ${pct(longShare)} 超过 8 字，其中不少会到 ${Math.floor(stats.length.p90 * 0.6)}–${stats.length.p90} 字。`,
+      `- 长度：长短混着来，不是一直短——${pct(stats.length.shortRate)} 只有 1–2 个字，` +
+        `${pct(longShare)} 是超过 8 字的完整句子（会到 ${Math.floor(stats.length.p90 * 0.6)}–${stats.length.p90} 字，中间带逗号），` +
+        `剩下的是三到八个字。该说完的事一口气说完，别停在最短那一档。`,
     )
   } else {
     lines.push(

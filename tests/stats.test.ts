@@ -149,7 +149,7 @@ test('speech rules turn measured habits into instructions', () => {
   assert.match(rules, /用来断长句/)
   // The length rule must keep room for long messages, or the persona freezes
   // into one-word replies — the mistake this project made twice before.
-  assert.match(rules, /不要只会发短句/)
+  assert.match(rules, /长短混着来/)
 })
 
 test('speech rules stay silent when nothing was measured', () => {
@@ -183,7 +183,7 @@ test('a fragmentary speaker is never told to write longer', () => {
   const messages = Array.from({ length: 20 }, (_, index) => message('friend', index % 5 === 0 ? '这是一条稍微长一点的消息' : '行'))
   const rules = renderSpeechRules(computeStats(messages))
   assert.match(rules, /基本都很短/)
-  assert.doesNotMatch(rules, /不要只会发短句/)
+  assert.doesNotMatch(rules, /长短混着来/)
 })
 
 test('the long-sentence anchor never picks a media path', () => {
@@ -195,3 +195,4 @@ test('the long-sentence anchor never picks a media path', () => {
   const example = pickLongExample(messages, 24)
   assert.ok(example === undefined || !example.startsWith('media/'))
 })
+

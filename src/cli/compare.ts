@@ -12,8 +12,6 @@ import { buildSystemPrompt, loadPersona } from '../core/persona.ts'
 import { dataPath, readJsonl } from '../core/archive.ts'
 import { buildPredictions, findLeaked, selectSpread } from '../core/evalkit.ts'
 import { distance, profileMorphology } from '../core/compare.ts'
-import { computeStats } from '../core/stats.ts'
-import { lengthPlanFromStats, longHint, longSlots } from '../core/reply-length.ts'
 import {
   aggregateBigFive,
   assessSegments,
@@ -97,20 +95,12 @@ export async function runCompare(flags: Flags): Promise<void> {
   if (selected.length < requested) console.log(`只能选出 ${selected.length} 道互不重叠的题，本次每边 ${selected.length} 条。`)
 
   const compareConfig = { ...config, temperature: Number(process.env.PERSONAFORGE_EVAL_TEMPERATURE ?? '0.7') }
-
-  // Length has to be balanced here too: `chat` spreads long replies across a
-  // conversation, but this command generates one reply per item and would
-  // otherwise measure a behaviour the user never sees — 6.8 characters against
-  // a real 10.6. Long replies are spread evenly over the sample instead.
-  const archive = readJsonl<ChatMessage>(dataPath(`${holdoutName}.jsonl`))
-  const plan = archive.length === 0 ? undefined : lengthPlanFromStats(computeStats(archive))
-  const slots = plan === undefined ? new Set<number>() : longSlots(selected.length, plan.longShare)
-  if (plan !== undefined && slots.size > 0) {
-    console.log(`按真实比例（${(plan.longShare * 100).toFixed(0)}% 是长句）均匀挑 ${slots.size} 道题要求长回复。`)
-  }
-
-  // Index-aligned replies: a failed call leaves null, and every reply stays
-  // attached to its prediction for the personality pass below.
+  // Deliberately no length balancing here. Adding it made the comparison
+  // measure the wrong thing: the same nudge shifted one persona's replies by
+  // +2.9 characters and the other's by -0.5, so the result depended on how
+  // obediently a persona follows instructions rather than on which one sounds
+  // right. `chat` does balance length, but that is a runtime correction on a
+  // conversation; a comparison has to hold conditions constant.
   const replies: Array<Array<string | null>> = sides.map(() => selected.map(() => null))
   let failures = 0
 
@@ -118,8 +108,7 @@ export async function runCompare(flags: Flags): Promise<void> {
     for (const [sideIndex, side] of sides.entries()) {
       process.stdout.write(`第 ${offset + 1}/${selected.length} 题 · ${side.name} ... `)
       try {
-        const system = plan !== undefined && slots.has(offset) ? `${side.system}\n\n${longHint(plan.threshold)}` : side.system
-        const text = await complete(compareConfig, [{ role: 'system', content: system }, ...prediction.context])
+        const text = await complete(compareConfig, [{ role: 'system', content: side.system }, ...prediction.context])
         replies[sideIndex][offset] = text
         console.log('ok')
       } catch (error) {
@@ -269,4 +258,5 @@ export async function runCompare(flags: Flags): Promise<void> {
     )
   }
   console.log('距离只说明「像」，不说明接得上上下文——那一半要靠 duel 里你亲自读。')
+  console.log('（这里测的是 persona 原样生成；chat 和插件会按会话给长句做补偿，实际对话会比这更接近真实长度。）')
 }
