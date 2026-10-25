@@ -1,4 +1,4 @@
-﻿/**
+/**
  * `compare`: which persona is shaped more like the real messages?
  *
  * Both personas answer the same held-out contexts, and the result is compared
@@ -29,7 +29,16 @@ import {
 import type { ChatMessage } from '../core/types.ts'
 import { numberFlag, stringFlag, type Flags } from './args.ts'
 
-/**\n * Smallest personality gap worth reporting.\n *\n * Fifty items on a 1–5 integer scale give a standard error near 0.1 per side.\n * A gap under this floor is measurement noise, not a difference between two\n * personas, and printing it as a verdict would manufacture a conclusion.\n */\nconst PERSONALITY_NOISE_FLOOR = 0.05\n\n/** Display width, so a Chinese label and an ASCII label line up. */
+/**
+ * Smallest personality gap worth reporting.
+ *
+ * Fifty items on a 1–5 integer scale give a standard error near 0.1 per side.
+ * A gap under this floor is measurement noise, not a difference between two
+ * personas, and printing it as a verdict would manufacture a conclusion.
+ */
+const PERSONALITY_NOISE_FLOOR = 0.05
+
+/** Display width, so a Chinese label and an ASCII label line up. */
 function width(text: string): number {
   let total = 0
   for (const character of text) total += /[\u4e00-\u9fff\uff00-\uffef]/.test(character) ? 2 : 1

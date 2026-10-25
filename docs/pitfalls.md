@@ -2,6 +2,29 @@
 
 这里是必须记住的坑：每条都真实发生过，症状和排查路径都写下来了。新会话不需要从头读，遇到相关问题再查。
 
+## 用 PowerShell 改代码：`\n` 不是换行
+
+**症状**：`node src/cli/index.ts compare ...` 直接崩在
+
+```
+SyntaxError [ERR_INVALID_TYPESCRIPT_SYNTAX]: Expected unicode escape
+```
+
+并指向一行塞满了 `\n` 字面字符的注释。
+
+**根因**：用 `(Get-Content ...).Replace(a, "多行代码\n第二行")` 往文件里插内容。PowerShell 双引号里的 `\n` 是**反斜杠加 n 两个字面字符**，不是换行，于是整段注释被写成一行。
+
+**修法**：插多行内容用 here-string（结束标记 `'@` 要独占一行）：
+
+```powershell
+$code = @'
+第一行
+第二行
+'@
+```
+
+更稳的是直接用文件编辑工具改，别用字符串替换拼代码。**这个坑对任何「用 shell 拼接源码」的场合都成立**，不只 PowerShell。
+
 ## 生成产物默认都是敏感的
 
 **症状**：跑完 `assess` 后 `git add -A`，把 `personas/*/bigfive.md` 提交了。那里面每个维度的「证据」都是逐字原话（`我一开始不管他`、`如何破局之`、`可能纯靠建模吧`），和 `persona.md` 完全同级敏感。
