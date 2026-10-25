@@ -31,13 +31,14 @@ node src/cli/index.ts <命令>
 | 一键流水线 `forge` | ✅ 代码完成：txt → persona.md，支持任意规模 + 抽样控成本 | `src/core/forge.ts` |
 | 盲测 `eval` | ⚠️ 两轮修正后改成混排判断题（10 真 + 10 假），**需重跑才算数** | `src/cli/eval.ts` |
 | 两版对比 `compare` / `duel` | ✅ 新增（2026-10-22）：`compare` 比统计分布（零标注），`duel` 做成对比较（题源逻辑抽到 `core/evalkit.ts`） | `src/cli/compare.ts`、`src/cli/duel.ts`、`src/core/evalkit.ts`、`src/core/compare.ts` |
+| 大五人格评估 `assess` | ✅ 新增（2026-10-25）：固定量表温度 0 逐块打分 + 证据核验，`compare` 末尾加人格距离 | `src/core/bigfive.ts`、`src/cli/assess.ts` |
 | MCP server | ✅ 可用，已挂进 DSH（两个工具：`forge_persona` / `chat_persona`） | `src/mcp/server.ts` |
 | 启动器 | ✅ 可用 | `启动对话.cmd` |
 | 微信/QQ/抖音 导入器 | ❌ 未做，靠手动粘贴 | — |
 | QQ 机器人 | ❌ 未做 | — |
 | 记忆检索（FTS5） | ❌ 未做 | — |
 
-测试：`node --test --test-isolation=none "tests/*.test.ts"`（152 项全绿）
+测试：`node --test --test-isolation=none "tests/*.test.ts"`（163 项全绿）
 
 ## 关键约束（容易踩）
 
@@ -60,7 +61,7 @@ node src/cli/index.ts <命令>
   - 版本线：`0.1.0`/`0.1.1` 入口指向 `src/*.ts` → 装进 profile 必崩；`0.1.2` 带自依赖 → pnpm 装不上；`0.1.3` 第一个能装能加载；`0.1.4` 与 0.1.3 同内容，只为绕开 staged publish 占号；`0.1.5` 会话工作目录修正；`0.1.6` 按复盘改进
   - 发布相关的坑（staged 占号、token 失效报 404、`update` 升不上去）都在 `docs/pitfalls.md`
 - ✅ **插件在 DSH 里跑通并升到 0.1.6**：`forge_persona` 结果末尾打印 `persona-forge 0.1.6 · ROOT <会话目录>`，三份旧文件覆盖前都会存 `.prev`
-- ⬜ **发布 0.1.7**（B2/B4/B7 这一批）：`npm publish` 之后要用 `dsh plugin --profile web add @zmairc/persona-forge@0.1.7`，**`update` 无效**
+- ✅ **0.1.7 已发布并装进 DSH**（2026-10-25 确认：npm registry 有 0.1.7，web profile `dsh plugin list` 显示 `@zmairc/persona-forge@0.1.7`）。注意装/升级必须 `dsh plugin --profile web add @zmairc/persona-forge@<版本>`，**`update` 无效**
 
 ## 用户的长期愿景（2026-10-20 原话整理）
 
@@ -75,19 +76,11 @@ node src/cli/index.ts <命令>
 
 ### 先做完的小事
 
-1. **发布 0.1.7**：这批攒了 B2/B4/B7 + `compare`/`duel` + `--recent`/`--as` + 说话规矩 + 关系层 + 长句平衡 + `export` + 证据校验。
-
-   **用脚本，别手敲**——npm token 几小时就失效，手敲会漏掉重新登录、然后得到一个误导性的 404：
-   ```powershell
-   .\scripts\publish.ps1
-   ```
-   脚本依次做：工作树检查 → `git push` → `npm login` → `npm publish` → 查版本 → 打印装插件命令。
-
-2. **装进 DSH**（脚本最后会打印）：
-   ```powershell
-   dsh plugin --profile web add @zmairc/persona-forge@0.1.7
-   ```
-   `update` 升不上去（add 写的是精确版本），见 `docs/pitfalls.md`。
+✅ **发布 + 装进 DSH 都完成了**（2026-10-25）：npm 上是 0.1.7，web profile 已装 0.1.7。下次发版用脚本，别手敲——npm token 几小时就失效，手敲会漏掉重新登录、然后得到一个误导性的 404：
+```powershell
+.\scripts\publish.ps1
+```
+脚本依次做：工作树检查 → `git push` → `npm login` → `npm publish` → 查版本 → 打印装插件命令（装/升级必须 `add`，`update` 升不上去，见 `docs/pitfalls.md`）。
 
 ### 已经验证过的，别再重做
 
@@ -106,8 +99,15 @@ node src/cli/index.ts <命令>
 
 ### 接着做
 
-1. **C：大五人格评估**（用户指定下一步）：把 `compare` 的统计距离换成或补上人格维度，让「像不像」有可复现的指标。
-2. **多源输入架构**（大，真正的上限突破）：现在一切都假设「一份 txt 的聊天记录」。语音转写、长文（日记/笔记）、多个聊天对象——三样各自能打开一个现在完全关着的房间。这是动架构，不是加功能。
+1. **多源输入架构**（大，真正的上限突破；原 C 项大五评估已完成，见下）：现在一切都假设「一份 txt 的聊天记录」。语音转写、长文（日记/笔记）、多个聊天对象——三样各自能打开一个现在完全关着的房间。这是动架构，不是加功能。
+
+### 已完成（2026-10-25 第三批：C 项大五人格评估）
+
+1. **`assess` 命令** ✅ 固定中文量表（rubricVersion=1）逐块打大五分（1–5）+ 逐字证据，温度 0，证据按归档核验（对不上的剔除并计数）。产物：`personas/<name>/bigfive.md`（人读，含分档解读和「聊天记录里的他 ≠ 全面测评」caveat）+ `data/<name>.bigfive.json`（机器读，带 model/date/每块分数）。`--sample N` 用 `sampleEvenly` 控成本，`--dry-run` 离线可用。`src/core/bigfive.ts`、`src/cli/assess.ts`。
+2. **`compare` 人格距离** ✅ 统计距离保留，末尾并列人格距离：真实回复和两版生成回复按「上下文 + 回复」成对评估（孤句没有人格信号），每 20 题一批、温度 0，同量表。两项指标指向不同版本时明确说「一个形状像、一个性格像」。`src/cli/compare.ts`。
+3. **防偏差设计**（量表里写死）：不许从长短/标点/表情推人格（morphology 已量过，双计数）；1 分和 5 分要反复出现的证据；看不出给 3 分留空证据。测试 152 → 163 项。
+
+**还没做的验证**（真调用要在用户 PowerShell 跑）：`assess --persona zhaoming`（用户本人即 ground truth）→ `assess --persona dennis`（对方诉苦时两人反应相反，宜人性应有方向性差异，这是现成交叉验证）→ 重跑一次看 ±std 稳定性 → `compare --base zhaoming --challenger zhaoming.manual` 看两个距离是否同向。
 
 ### 明确不做
 

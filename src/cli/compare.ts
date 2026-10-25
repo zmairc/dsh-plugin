@@ -7,11 +7,25 @@
  * items — which makes it the cheap first half of "is the new version better?".
  */
 
-import { complete, LlmError, llmConfigFromEnv } from '../core/llm.ts'
+import { complete, llmConfigFromEnv, LlmError, type WireMessage } from '../core/llm.ts'
 import { buildSystemPrompt, loadPersona } from '../core/persona.ts'
 import { dataPath, readJsonl } from '../core/archive.ts'
 import { buildPredictions, findLeaked, selectSpread } from '../core/evalkit.ts'
-import { distance, profileMorphology, type Morphology } from '../core/compare.ts'
+import { distance, profileMorphology } from '../core/compare.ts'
+import {
+  aggregateBigFive,
+  assessTranscripts,
+  countUnverified,
+  DIMENSIONS,
+  DIMENSION_LABELS,
+  meanScores,
+  personalityDistance,
+  renderReplyItems,
+  sumUnverified,
+  verifyBigFiveEvidence,
+  type BigFiveSummary,
+  type Dimension,
+} from '../core/bigfive.ts'
 import type { ChatMessage } from '../core/types.ts'
 import { numberFlag, stringFlag, type Flags } from './args.ts'
 
@@ -74,7 +88,9 @@ export async function runCompare(flags: Flags): Promise<void> {
   if (selected.length < requested) console.log(`只能选出 ${selected.length} 道互不重叠的题，本次每边 ${selected.length} 条。`)
 
   const compareConfig = { ...config, temperature: Number(process.env.PERSONAFORGE_EVAL_TEMPERATURE ?? '0.7') }
-  const generated: string[][] = sides.map(() => [])
+  // Index-aligned replies: a failed call leaves null, and every reply stays
+  // attached to its prediction for the personality pass below.
+  const replies: Array<Array<string | null>> = sides.map(() => selected.map(() => null))
   let failures = 0
 
   for (const [offset, prediction] of selected.entries()) {
@@ -82,7 +98,7 @@ export async function runCompare(flags: Flags): Promise<void> {
       process.stdout.write(`第 ${offset + 1}/${selected.length} 题 · ${side.name} ... `)
       try {
         const text = await complete(compareConfig, [{ role: 'system', content: side.system }, ...prediction.context])
-        generated[sideIndex].push(text)
+        replies[sideIndex][offset] = text
         console.log('ok')
       } catch (error) {
         failures += 1
@@ -92,10 +108,14 @@ export async function runCompare(flags: Flags): Promise<void> {
     }
   }
 
-  if (generated.every((texts) => texts.length === 0)) throw new Error('两个版本都没生成出内容，检查接口配置后重试。')
+  if (replies.every((list) => list.every((text) => text === null))) {
+    throw new Error('两个版本都没生成出内容，检查接口配置后重试。')
+  }
 
+  const sideTexts = (sideIndex: number): string[] =>
+    replies[sideIndex].filter((text): text is string => text !== null)
   const truth = profileMorphology(selected.map((prediction) => prediction.truth))
-  const profiles = sides.map((side, index) => ({ name: side.name, profile: profileMorphology(generated[index]) }))
+  const profiles = sides.map((side, index) => ({ name: side.name, profile: profileMorphology(sideTexts(index)) }))
   const percent = (value: number): string => `${(value * 100).toFixed(1)}%`
 
   console.log(`\n\n留出集：data/${holdoutName}.holdout.jsonl（${holdout.length} 条）`)
@@ -116,12 +136,102 @@ export async function runCompare(flags: Flags): Promise<void> {
 
   const scored = profiles.map((entry) => ({ name: entry.name, distance: distance(entry.profile, truth) }))
   scored.sort((a, b) => a.distance - b.distance)
-  console.log('\n与真实分布的距离（越小越像）')
-  for (const entry of scored) console.log(`  ${pad(entry.name, 24)}${entry.distance.toFixed(3)}`)
+
+  // Personality pass: the same Big Five rubric over (context, reply) pairs.
+  // An isolated one-word reply carries no personality; the same word after the
+  // friend's complaint does, so the judge sees every reply in its situation.
+  // The judge must be deterministic — reproducibility is the point of the metric.
+  const assessConfig = { ...config, temperature: 0 }
+  const assessBatchSize = 20
+  let assessCalls = 0
+  const assessSide = async (
+    label: string,
+    items: ReadonlyArray<{ context: readonly WireMessage[]; reply: string }>,
+  ): Promise<BigFiveSummary | null> => {
+    if (items.length === 0) return null
+    const batches: Array<typeof items> = []
+    for (let index = 0; index < items.length; index += assessBatchSize) batches.push(items.slice(index, index + assessBatchSize))
+    const transcripts = batches.map((batch) => renderReplyItems(batch))
+    assessCalls += transcripts.length
+    process.stdout.write(`\n人格评估（${label}，${transcripts.length} 批，温度 0）... `)
+    const { observations, failed } = await assessTranscripts(assessConfig, transcripts, '对方', '他', {})
+    if (observations.length === 0) {
+      console.log(`失败（${failed} 批都没解析出结果）`)
+      return null
+    }
+    // Generated replies are novel text, so quotes are checked against what the
+    // judge was actually shown, not against the archive.
+    const shown = [transcripts.join('\n')]
+    const dropped: Array<Record<Dimension, number>> = []
+    const verified = observations.map((observation) => {
+      const after = verifyBigFiveEvidence(observation, shown)
+      dropped.push(countUnverified(observation, after))
+      return after
+    })
+    console.log(`ok（${observations.length}/${transcripts.length} 批）`)
+    return aggregateBigFive(verified, sumUnverified(dropped), failed)
+  }
+
+  const truthBigFive = await assessSide(
+    '真实',
+    selected.map((prediction) => ({ context: prediction.context, reply: prediction.truth })),
+  )
+  const sideBigFive: Array<BigFiveSummary | null> = []
+  for (const [sideIndex, side] of sides.entries()) {
+    const items = selected
+      .map((prediction, offset) => ({ context: prediction.context, reply: replies[sideIndex][offset] }))
+      .filter((item): item is { context: readonly WireMessage[]; reply: string } => item.reply !== null)
+    sideBigFive.push(await assessSide(side.name, items))
+  }
+
+  if (truthBigFive !== null) {
+    const cell = (summary: BigFiveSummary | null, dimension: Dimension): string => {
+      const stat = summary?.stats[dimension]
+      return stat !== undefined && stat.n > 0 ? stat.mean.toFixed(1) : '—'
+    }
+    console.log(`\n\n大五人格（1–5 分，另花 ${assessCalls} 次温度 0 调用）`)
+    console.log(row('维度', ['真实', ...sides.map((side) => side.name)]))
+    for (const dimension of DIMENSIONS) {
+      console.log(row(DIMENSION_LABELS[dimension], [
+        cell(truthBigFive, dimension),
+        ...sideBigFive.map((summary) => cell(summary, dimension)),
+      ]))
+    }
+  } else {
+    console.log('\n真实侧的人格评估全失败，本轮只有统计距离。')
+  }
+
+  console.log('\n与真实的距离（越小越像）')
+  for (const entry of scored) console.log(`  ${pad(`统计 · ${entry.name}`, 24)}${entry.distance.toFixed(3)}`)
+  const personalityScored =
+    truthBigFive === null
+      ? []
+      : sides
+        .map((side, index) => ({
+          name: side.name,
+          distance: sideBigFive[index] === null ? undefined : personalityDistance(meanScores(sideBigFive[index] as BigFiveSummary), meanScores(truthBigFive)),
+        }))
+        .filter((entry): entry is { name: string; distance: number } => entry.distance !== undefined)
+  for (const entry of personalityScored) console.log(`  ${pad(`人格 · ${entry.name}`, 24)}${entry.distance.toFixed(3)}`)
 
   const [winner, runnerUp] = scored
   if (runnerUp === undefined) return
-  const gap = runnerUp.distance - winner.distance
-  console.log(`\n结论：${winner.name} 更接近真实分布（差距 ${gap.toFixed(3)}）。`)
-  console.log('这只是「形状像」，不说明接得上上下文——那一半要靠 duel 里你亲自读。')
+  const personalityWinner = personalityScored.length === 2
+    ? personalityScored.reduce((best, entry) => (entry.distance < best.distance ? entry : best))
+    : undefined
+  if (personalityWinner === undefined) {
+    console.log(`\n结论：${winner.name} 更接近真实分布（统计距离 ${winner.distance.toFixed(3)}；人格距离本轮没测成）。`)
+  } else if (personalityWinner.name === winner.name) {
+    const other = personalityScored.find((entry) => entry.name !== personalityWinner.name) as { name: string; distance: number }
+    console.log(
+      `\n结论：${winner.name} 两项都更近——统计距离 ${winner.distance.toFixed(3)} vs ${runnerUp.distance.toFixed(3)}，` +
+        `人格距离 ${personalityWinner.distance.toFixed(3)} vs ${other.distance.toFixed(3)}。`,
+    )
+  } else {
+    console.log(
+      `\n结论：两项指标指向不同版本——形状上 ${winner.name} 更像（${winner.distance.toFixed(3)} vs ${runnerUp.distance.toFixed(3)}），` +
+        `人格上 ${personalityWinner.name} 更像。分歧本身就是结果：一个长得像，一个性格像。`,
+    )
+  }
+  console.log('距离只说明「像」，不说明接得上上下文——那一半要靠 duel 里你亲自读。')
 }

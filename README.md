@@ -181,10 +181,11 @@ PowerShell 用 `$env:PERSONAFORGE_API_KEY = "sk-..."`。
 | `stats --persona <name>` | 统计风格指纹 |
 | `stats --file <txt>` | 直接对原始文本统计，不落盘 |
 | `distill --persona <name>` | 让模型读对话，生成 `persona.draft.md` 初稿 |
+| `assess --persona <name>` | 大五人格评估：五维分数 + 逐字证据，写 `bigfive.md`（`--sample 40` 控制花费） |
 | `chat --persona <name> [--as 对方名字]` | 进入扮演对话；`--as` 指定现在跟谁说话（换个人用同一人设时必填） |
 | `eval --persona <name> --n 10` | 出 2n 条回复（一半真人原话、一半 AI 编的），让你挑出 AI 编的 |
 | `reveal --persona <name>` | 对盲测答案 |
-| `compare --base <新版> --challenger <旧版> --n 100` | 两版回答同一批留出题，比长度分布、标点、表情与真实消息的差距（不用人工） |
+| `compare --base <新版> --challenger <旧版> --n 100` | 两版回答同一批留出题，比长度分布、标点、表情与真实消息的差距，再比大五人格距离（不用人工） |
 | `duel --base <新版> --challenger <旧版> --n 20` | 同一段对话、两条匿名回复，问「哪条更像他」；`--answers "A,B,…"` 评分 |
 | `export --persona <name>` | 导出 SillyTavern V2 角色卡，别的客户端可以直接导入 |
 
@@ -200,6 +201,8 @@ node src/cli/index.ts export --persona 老王
 卡片默认写在 `data/` 下（已 gitignore），因为里面有真实原话。想直接给别人，用 `--out` 指定路径。
 
 **怎么判断改版有没有变好**：`eval` 测的是「你能不能看出哪句是 AI 编的」——但人判断时会去找破绽，而真人本来就跳话题，所以它带着偏差。`compare` 换成统计距离（样本可以到 100 条，不用你标），`duel` 换成「哪条更像」的强迫比较（人做相对判断比绝对判断可靠）。两个都跑，结论一致才算数；不一致本身就说明「统计上像」和「读起来像」是两回事。
+
+`compare` 的末尾还会报**人格距离**：用固定的大五量表（温度 0）把真实回复和两版生成回复各评一遍五维分数。「行」这种孤零零的短句没有人格信号，所以评估单位是「上下文 + 回复」——裁判看到对方诉苦之后他怎么接，才评得出宜人性。统计距离和人格距离打架时，compare 会直说：一个形状像，一个性格像。想先给真人档案打分，用 `assess --persona <name>`，产物 `personas/<name>/bigfive.md` 是人读的报告（每条证据都是核到过原话的摘录），`data/<name>.bigfive.json` 是 compare 用的机器版。
 
 `distill` 参数：
 
@@ -248,10 +251,12 @@ node src/cli/index.ts export --persona 老王
 personas/<name>/
   ├── persona.md         # 手写人设，进 system prompt，决定"像不像"的 70%
   ├── transcript.txt     # 你粘进来的原文
-  └── style.md           # stats 生成的风格指纹
+  ├── style.md           # stats 生成的风格指纹
+  └── bigfive.md         # assess 生成的大五人格报告（带核验过的证据）
 data/
   ├── <name>.jsonl       # 归一化后的消息
-  └── <name>.holdout.jsonl
+  ├── <name>.holdout.jsonl
+  └── <name>.bigfive.json  # assess 的机器版分数，compare 拿来算人格距离
 ```
 
 `data/` 不入库。原始记录任何情况下不上传、不外发。
@@ -263,6 +268,7 @@ data/
 - [x] 单人格 chat（prompt 注入）
 - [x] 留出集盲测
 - [x] LLM 蒸馏流水线（分块观察 + 合并 + 生成 `persona.draft.md`）
+- [x] 大五人格评估（`assess` + `compare` 的人格距离，温度 0 可复现）
 - [x] MCP server（`forge_persona` / `chat_persona`）
 - [x] DSH 原生插件（`dsh plugin add @zmairc/persona-forge`）
 - [ ] 微信 chatlog / QQ qq-chat-exporter / 抖音 importer

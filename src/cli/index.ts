@@ -8,6 +8,7 @@
  */
 
 import { parseFlags } from './args.ts'
+import { runAssess } from './assess.ts'
 import { runChat } from './chat.ts'
 import { runCompare } from './compare.ts'
 import { runDistill } from './distill.ts'
@@ -46,6 +47,9 @@ const USAGE = `persona-forge — 从聊天记录蒸馏一个人的说话方式
                                          --friend <名字>   草稿里叫他什么（默认取 persona.md 标题）
                                          --dry-run         只报分块和开销，不调模型
                                          --overwrite       直接覆盖 persona.md
+  assess   --persona <名字>              大五人格评估：五维分数 + 逐字证据，写 bigfive.md
+                                         --sample 40       只均匀抽 40 块（控制花费）
+                                         --dry-run         只报分块和开销，不调模型
   stats    --persona <名字> | --file <原始文本>
                                         输出风格指纹（--markdown 写入 style.md）
   chat     --persona <名字>             进入扮演对话
@@ -104,6 +108,9 @@ async function main(argv: string[]): Promise<void> {
       return
     case 'distill':
       await runDistill(flags)
+      return
+    case 'assess':
+      await runAssess(flags)
       return
     case 'chat':
       await runChat(flags)
