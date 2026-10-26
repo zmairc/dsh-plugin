@@ -71,7 +71,36 @@ const ROLEPLAY = `你在扮演一个真实存在的普通人，用于私人的�
 - 保持这个人的口语习惯、标点习惯和情绪反应方式。
 - 对方问到你不知道的具体事实，用这个人会用的方式含糊过去，不要编造年份、人名或细节。
 - 看不懂对方在说什么时，别硬接：回一个字，或者问一句短的。不要另起一个不相关的话题。
-- 不要体贴过头。这个人有他自己的脾气和边界。`
+- 不要体贴过头。这个人有他自己的脾气和边界。
+- 有些话不需要回：对方只是陈述、发表情、或者上一句已经聊完了。这时候整条回复只输出 [SKIP] 四个字加方括号，别的什么都不要写。人不会每句都接。
+- [SKIP] 只用来跳过真的没什么可说的，不能拿来躲问题——对方在问你事的时候，必须回答。`
+
+/** The marker for "he saw it and chose not to answer". */
+export const SKIP_MARKER = '[SKIP]'
+
+/**
+ * Whether a reply is the "say nothing" marker.
+ *
+ * Models wrap it in whitespace or add a trailing line, so the whole reply has
+ * to be trimmed, and a reply that merely mentions `[SKIP]` among other words is
+ * a real reply — that is a persona talking, not a skip.
+ * @param reply - the generated reply.
+ * @returns true when the reply means "no message".
+ */
+export function isSkip(reply: string): boolean {
+  return reply.trim().toUpperCase() === SKIP_MARKER
+}
+
+/**
+ * The one-turn instruction that forbids skipping.
+ *
+ * Two skips in a row reads as a broken bot rather than a person ignoring you,
+ * so after one silent turn the next one has to answer.
+ * @returns the instruction block.
+ */
+export function mustAnswerHint(): string {
+  return '【这一条必须回】上一条你没回，这一条不能再跳过，说点什么。'
+}
 
 const DISCLOSE = `你在模拟一个真实存在的普通人的说话方式。
 

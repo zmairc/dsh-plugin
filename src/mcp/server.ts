@@ -14,7 +14,7 @@
 import { createInterface } from 'node:readline'
 import { LlmError, complete, llmConfigFromEnv } from '../core/llm.ts'
 import { forgePersona, assertSafePersonaName } from '../core/forge.ts'
-import { buildSystemPrompt, loadPersona } from '../core/persona.ts'
+import { buildSystemPrompt, isSkip, loadPersona, mustAnswerHint, SKIP_MARKER } from '../core/persona.ts'
 import { loadDotEnv } from '../core/env.ts'
 import type { Source } from '../core/types.ts'
 
@@ -51,7 +51,7 @@ const FORGE_TOOL = {
 const CHAT_TOOL = {
   name: 'chat_persona',
   description:
-    '用指定人设回复一句话。读取 personas/<名字>/ 下的 persona.md、lore.md、style.md，按这个人的说话方式回一句。返回回复文本本身，没有任何解释。',
+    '用指定人设回复一句话。读取 personas/<名字>/ 下的 persona.md、lore.md、style.md，按这个人的说话方式回一句。返回回复文本本身，没有任何解释。返回 [SKIP] 表示这句话他不想接——不要发消息。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -157,7 +157,7 @@ async function callChat(args: Record<string, unknown>): Promise<string> {
   }
 
   const loaded = loadPersona(persona)
-  const system = buildSystemPrompt(loaded, { disclose: false })
+  let system = buildSystemPrompt(loaded, { disclose: false })
 
   const history = Array.isArray(args.history) ? args.history : []
   const turns = history.flatMap((item) => {
@@ -168,11 +168,20 @@ async function callChat(args: Record<string, unknown>): Promise<string> {
     return role !== null && content.length > 0 ? [{ role, content }] : []
   })
 
-  return await complete(config, [
+  // One silent turn is allowed; the one after it has to answer.
+  const lastTurn = turns.at(-1)
+  if (lastTurn !== undefined && lastTurn.role === 'assistant' && isSkip(lastTurn.content)) {
+    system += `\n\n${mustAnswerHint()}`
+  }
+
+  const reply = await complete(config, [
     { role: 'system', content: system },
     ...turns,
     { role: 'user', content: message },
   ])
+  // Silence travels back as the marker so the caller sends nothing instead of
+  // treating an empty reply as a failure.
+  return isSkip(reply) ? SKIP_MARKER : reply
 }
 
 /** Handle one JSON-RPC message and return the result object, if any. */

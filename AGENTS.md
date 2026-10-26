@@ -1,4 +1,4 @@
-﻿# persona-forge
+# persona-forge
 
 从聊天记录里蒸馏一个人的说话风格，做成可移植的人设，让任何 AI 扮演他。
 
@@ -26,7 +26,7 @@ node src/cli/index.ts <命令>
 | 宽松解析器（3 种布局 + 兜底） | ✅ 完成 | `src/core/parse.ts` |
 | 统计指纹 | ✅ 完成 | `src/core/stats.ts` |
 | 人设三层（persona / lore / style） | ✅ 完成 | `src/core/persona.ts` |
-| 对话 REPL（含 `/actions` 开关） | ✅ 完成 | `src/cli/chat.ts` |
+| 对话 REPL（含 `/actions` 开关） | ✅ 完成：可用 `[SKIP]` 偶尔不接话，连续两次沉默被禁止 | `src/cli/chat.ts` |
 | 自动蒸馏 `distill` | ✅ 定稿：结构、说话人标签、口头禅过滤、负向规则去重都过了真实数据验证 | `src/core/distill.ts` |
 | 一键流水线 `forge` | ✅ 代码完成：txt → persona.md，支持任意规模 + 抽样控成本 | `src/core/forge.ts` |
 | 盲测 `eval` | ⚠️ 两轮修正后改成混排判断题（10 真 + 10 假），**需重跑才算数** | `src/cli/eval.ts` |
@@ -38,7 +38,7 @@ node src/cli/index.ts <命令>
 | QQ 机器人 | ❌ 未做 | — |
 | 记忆检索（FTS5） | ❌ 未做 | — |
 
-测试：`node --test --test-isolation=none "tests/*.test.ts"`（168 项全绿）
+测试：`node --test --test-isolation=none "tests/*.test.ts"`（171 项全绿）
 
 ## 关键约束（容易踩）
 
@@ -121,6 +121,10 @@ node src/cli/index.ts <命令>
 - **长度改不动**：三次尝试（6.8 / 6.3 / 6.7 字，真实 10.6），给区间、给原话锚点、给「别停在最短」都没用。标点是可执行规则，长度是习惯。**别再为调长度重跑 compare**（每次 100 次调用）。
 - **人格距离只能做画像，不能做裁判**（见 `docs/decisions.md`）。
 - **C3 已有答案**：全量版统计上胜手写版（0.082 vs 0.109），人格分不出。赢在标点和长度分布。
+
+### 已完成（2026-10-25 第五批：允许不接话 `[SKIP]`）
+
+8. **`[SKIP]` 静默** ✅ 借 `dsh-qq-bot` 的思路：真人不是每句都接。ROLEPLAY 里加两条规则——「不需要回的整条只输出 `[SKIP]`」「不能用它躲问题」；`isSkip()` 只认整条就是标记（`[skip]`、带空行算，`[SKIP] 算了不说了` 不算）；`mustAnswerHint()` 保证连续两次沉默不可能，且静默回合不参与长度平衡。三个入口一致：`chat` 打印「（没回）」并把它写进 history、DSH 插件与 MCP server 的 `chat_persona` 直接返回 `[SKIP]`。测试 167 → 171 项。
 
 ### 明确不做
 

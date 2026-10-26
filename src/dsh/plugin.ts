@@ -13,7 +13,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { appendFileSync, readFileSync } from 'node:fs'
 import { LlmError, complete, llmConfigFromEnv } from '../core/llm.ts'
 import { forgePersona, assertSafePersonaName } from '../core/forge.ts'
-import { buildSystemPrompt, loadPersona } from '../core/persona.ts'
+import { buildSystemPrompt, isSkip, loadPersona, mustAnswerHint, SKIP_MARKER } from '../core/persona.ts'
 import { loadDotEnv } from '../core/env.ts'
 import { dataPath, readJsonl, rootDir, setRoot } from '../core/archive.ts'
 import { computeStats } from '../core/stats.ts'
@@ -161,21 +161,32 @@ async function callChat(args: Record<string, unknown>): Promise<string> {
     return role !== null && content.length > 0 ? [{ role, content }] : []
   })
 
-  // Balance reply length over the caller's history. This tool is stateless, so
-  // without a few past turns there is nothing to balance and the persona's own
-  // length rules stand alone.
-  const archive = readJsonl<ChatMessage>(dataPath(`${persona}.jsonl`))
-  if (archive.length > 0) {
-    const plan = lengthPlanFromStats(computeStats(archive))
-    const lengths = turns.filter((turn) => turn.role === 'assistant').map((turn) => turn.content.length)
-    if (shouldAskForLong(lengths, plan)) system += `\n\n${longHint(plan.threshold)}`
+  // Two skips in a row is not a person ignoring you, it is a broken bot, so a
+  // turn that follows silence has to answer. That wins over length balancing.
+  const lastTurn = turns.at(-1)
+  const lastWasSkip = lastTurn !== undefined && lastTurn.role === 'assistant' && isSkip(lastTurn.content)
+  if (lastWasSkip) {
+    system += `\n\n${mustAnswerHint()}`
+  } else {
+    // Balance reply length over the caller's history. This tool is stateless, so
+    // without a few past turns there is nothing to balance and the persona's own
+    // length rules stand alone.
+    const archive = readJsonl<ChatMessage>(dataPath(`${persona}.jsonl`))
+    if (archive.length > 0) {
+      const plan = lengthPlanFromStats(computeStats(archive))
+      const lengths = turns.filter((turn) => turn.role === 'assistant').map((turn) => turn.content.length)
+      if (shouldAskForLong(lengths, plan)) system += `\n\n${longHint(plan.threshold)}`
+    }
   }
 
-  return await complete(config, [
+  const reply = await complete(config, [
     { role: 'system', content: system },
     ...turns,
     { role: 'user', content: message },
   ])
+  // Silence is an outcome, not an error. It travels back as the marker so the
+  // caller can decide to send nothing, and so a later turn can forbid a repeat.
+  return isSkip(reply) ? SKIP_MARKER : reply
 }
 
 /**
@@ -222,7 +233,7 @@ export function apply(ctx: { tools: { register: (tool: unknown) => void } }): vo
   ctx.tools.register(defineTool({
     name: 'chat_persona',
     description:
-      '用指定人设回复一句话。读取 personas/<名字>/ 下的 persona.md、lore.md、style.md，按这个人的说话方式回一句。返回回复文本本身，没有任何解释。',
+      '用指定人设回复一句话。读取 personas/<名字>/ 下的 persona.md、lore.md、style.md，按这个人的说话方式回一句。返回回复文本本身，没有任何解释。如果返回 [SKIP]，表示这个人看了一眼但没打算接这句话——不要发消息，也不要换个说法追问。',
     parameters: {
       persona: { type: 'string', required: true, description: '已存在的人设目录名，例如 dennis' },
       message: { type: 'string', required: true, description: '对方这次说的话' },

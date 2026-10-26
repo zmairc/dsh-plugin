@@ -1,6 +1,6 @@
-﻿import { test } from 'node:test'
+import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildSystemPrompt, hasStructuredLore, renderLoreTemplate, type Persona } from '../src/core/persona.ts'
+import { buildSystemPrompt, hasStructuredLore, isSkip, mustAnswerHint, renderLoreTemplate, SKIP_MARKER, type Persona } from '../src/core/persona.ts'
 
 /**
  * A persona is distilled from one relationship, so every line in it was said
@@ -65,5 +65,36 @@ test('any one of the three headings is enough', () => {
 test('the lore template lists the three headings', () => {
   const template = renderLoreTemplate('吴文哲')
   for (const title of ['## 关系', '## 事实清单', '## 禁区']) assert.match(template, new RegExp(title))
+})
+
+/**
+ * A persona that answers every line reads as a bot. Real chat has turns where
+ * nothing is worth saying — but a model told that will also use it to dodge
+ * questions, so the two rules have to ship together.
+ */
+
+test('the role-play prompt offers silence and forbids using it to dodge', () => {
+  const prompt = buildSystemPrompt(persona, { disclose: false })
+  assert.match(prompt, /\[SKIP\]/)
+  assert.match(prompt, /不需要回/)
+  // Without this second half, "[SKIP] whenever it is hard" is the cheap strategy.
+  assert.match(prompt, /不能拿来躲问题/)
+})
+
+test('a reply is a skip only when it is nothing but the marker', () => {
+  assert.equal(isSkip('[SKIP]'), true)
+  // Models pad it, wrap it, and lowercase it; all of that still means "no message".
+  assert.equal(isSkip('  [skip]\n'), true)
+  // A reply that talks about skipping is a reply.
+  assert.equal(isSkip('[SKIP] 算了不说了'), false)
+  assert.equal(isSkip('行'), false)
+  assert.equal(isSkip(''), false)
+})
+
+test('the must-answer hint is one instruction, not a second persona', () => {
+  const hint = mustAnswerHint()
+  assert.match(hint, /必须回/)
+  assert.ok(hint.length < 120, 'hint must stay short enough to not outweigh the persona')
+  assert.ok(!hint.includes(SKIP_MARKER), 'the hint must not show the model the marker it is being denied')
 })
 

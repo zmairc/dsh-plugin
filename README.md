@@ -171,6 +171,8 @@ export PERSONAFORGE_MODEL=deepseek-chat                     # 默认值
 
 PowerShell 用 `$env:PERSONAFORGE_API_KEY = "sk-..."`。
 
+真实聊天里有些话是不需要接的。`chat` 允许人设偶尔不接（终端里显示 `（没回）`，不是报错），但**连续两次沉默会被禁止**——不然模型会把沉默当成躲问题的便宜手段。这条纪律在三个入口上一致：`chat` 内部处理，DSH 插件和 MCP server 的 `chat_persona` 会直接返回 `[SKIP]`，接入方据此不发消息即可。
+
 ## 命令
 
 | 命令 | 作用 |
@@ -182,7 +184,7 @@ PowerShell 用 `$env:PERSONAFORGE_API_KEY = "sk-..."`。
 | `stats --file <txt>` | 直接对原始文本统计，不落盘 |
 | `distill --persona <name>` | 让模型读对话，生成 `persona.draft.md` 初稿 |
 | `assess --persona <name>` | 大五人格评估：五维分数 + 逐字证据，写 `bigfive.md`（`--sample 40` 控制花费） |
-| `chat --persona <name> [--as 对方名字]` | 进入扮演对话；`--as` 指定现在跟谁说话（换个人用同一人设时必填） |
+| `chat --persona <name> [--as 对方名字]` | 进入扮演对话；`--as` 指定现在跟谁说话（换个人用同一人设时必填）；允许偶尔不接话 |
 | `eval --persona <name> --n 10` | 出 2n 条回复（一半真人原话、一半 AI 编的），让你挑出 AI 编的 |
 | `reveal --persona <name>` | 对盲测答案 |
 | `compare --base <新版> --challenger <旧版> --n 100` | 两版回答同一批留出题，比长度分布、标点、表情与真实消息的差距，再比大五人格距离（不用人工） |

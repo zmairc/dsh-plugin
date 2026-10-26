@@ -8,7 +8,7 @@
 
 import { createInterface } from 'node:readline/promises'
 import { complete, llmConfigFromEnv, type WireMessage } from '../core/llm.ts'
-import { buildSystemPrompt, loadPersona } from '../core/persona.ts'
+import { buildSystemPrompt, isSkip, loadPersona, mustAnswerHint, SKIP_MARKER } from '../core/persona.ts'
 import { dataPath, readJsonl } from '../core/archive.ts'
 import { computeStats } from '../core/stats.ts'
 import { lengthPlanFromStats, longHint, shouldAskForLong, type LengthPlan } from '../core/reply-length.ts'
@@ -55,6 +55,8 @@ export async function runChat(flags: Flags): Promise<void> {
 
   const readline = createInterface({ input: process.stdin, output: process.stdout })
   const history: WireMessage[] = []
+  // Silence is allowed once; the turn after it has to answer.
+  let lastWasSkip = false
 
   for (;;) {
     let line: string
@@ -70,6 +72,7 @@ export async function runChat(flags: Flags): Promise<void> {
     if (trimmed === '/exit' || trimmed === '/quit') break
     if (trimmed === '/reset') {
       history.length = 0
+      lastWasSkip = false
       console.log('（已清空上下文）\n')
       continue
     }
@@ -86,14 +89,25 @@ export async function runChat(flags: Flags): Promise<void> {
 
     history.push({ role: 'user', content: trimmed })
     try {
+      // After a silent turn the next one must answer, and that outweighs the
+      // length nudge: forcing a long reply right after ignoring you reads as a
+      // bot, not as a person changing his mind.
       // Ask for a long reply only when long ones are behind their measured
       // share; a short reply is usually exactly right.
-      const askLong = plan !== undefined && shouldAskForLong(replyLengths, plan)
-      const turnSystem = askLong && plan !== undefined ? `${system}\n\n${longHint(plan.threshold)}` : system
+      const askLong = !lastWasSkip && plan !== undefined && shouldAskForLong(replyLengths, plan)
+      const hint = lastWasSkip ? mustAnswerHint() : askLong && plan !== undefined ? longHint(plan.threshold) : undefined
+      const turnSystem = hint === undefined ? system : `${system}\n\n${hint}`
       const reply = await complete(config, [{ role: 'system', content: turnSystem }, ...history.slice(-HISTORY_TURNS)])
-      history.push({ role: 'assistant', content: reply })
-      replyLengths.push(reply.length)
-      console.log(`\n${persona.name} > ${reply}\n`)
+      lastWasSkip = isSkip(reply)
+      // Silence is kept as the marker so the next request knows this turn was
+      // skipped, and it never enters the length distribution.
+      history.push({ role: 'assistant', content: lastWasSkip ? SKIP_MARKER : reply })
+      if (lastWasSkip) {
+        console.log(`\n（${persona.name} 没回）\n`)
+      } else {
+        replyLengths.push(reply.length)
+        console.log(`\n${persona.name} > ${reply}\n`)
+      }
     } catch (error) {
       // Drop the unanswered turn so the next request is not built on it.
       history.pop()
